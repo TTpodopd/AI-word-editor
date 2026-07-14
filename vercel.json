@@ -4,10 +4,11 @@
   "outputDirectory": "dist",
   "installCommand": "npm install",
   "functions": {
-    "api/health.js": {
-      "maxDuration": 10
+    "api/parse-document.js": {
+      "maxDuration": 10,
+      "memory": 1024
     },
-    "api/[...path].js": {
+    "api/chat.js": {
       "maxDuration": 10,
       "memory": 1024
     }

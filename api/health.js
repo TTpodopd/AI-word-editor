@@ -1,13 +1,4 @@
-const PROXY_VERSION = 5;
+const { handleHealth } = require("../server/apiHandlers");
+const { withApiHandler } = require("../server/vercelUtils");
 
-module.exports = (req, res) => {
-  res.setHeader("Access-Control-Allow-Origin", "*");
-  res.status(200).json({
-    status: "ok",
-    version: PROXY_VERSION,
-    supportsCustomProvider: true,
-    supportsWebSearch: true,
-    supportsDocumentParse: true,
-    supportsLatexConvert: true,
-  });
-};
+module.exports = withApiHandler(handleHealth, { requireAuth: false });
