@@ -1,0 +1,13 @@
+node_modules/
+dist/
+.office-addin-dev-certs/
+*.log
+.DS_Store
+
+# 密钥与环境变量（切勿提交）
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+secrets/
