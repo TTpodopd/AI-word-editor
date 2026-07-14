@@ -26,7 +26,12 @@ export function ensureOfficeReady(): Promise<void> {
       return;
     }
 
-    Office.onReady(() => resolve());
+    const timeout = window.setTimeout(() => resolve(), 3000);
+
+    Office.onReady(() => {
+      window.clearTimeout(timeout);
+      resolve();
+    });
   });
 
   return officeReadyPromise;

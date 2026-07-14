@@ -1,51 +1,5 @@
 const express = require("express");
 const cors = require("cors");
-const mammoth = require("mammoth");
-
-if (typeof globalThis.DOMMatrix === "undefined") {
-  globalThis.DOMMatrix = class DOMMatrix {
-    constructor() {
-      this.a = 1;
-      this.b = 0;
-      this.c = 0;
-      this.d = 1;
-      this.e = 0;
-      this.f = 0;
-    }
-    multiplySelf() {
-      return this;
-    }
-    preMultiplySelf() {
-      return this;
-    }
-    translateSelf() {
-      return this;
-    }
-    scaleSelf() {
-      return this;
-    }
-    rotateSelf() {
-      return this;
-    }
-    invertSelf() {
-      return this;
-    }
-    transformPoint(point) {
-      return point;
-    }
-  };
-}
-
-if (typeof globalThis.ImageData === "undefined") {
-  globalThis.ImageData = class ImageData {};
-}
-
-if (typeof globalThis.Path2D === "undefined") {
-  globalThis.Path2D = class Path2D {};
-}
-
-const { PDFParse } = require("pdf-parse");
-const { convertLatexToOoxml } = require("./latexOoxml");
 const { proxyAccessMiddleware } = require("./proxyAuth");
 
 const PROXY_VERSION = 5;
@@ -239,9 +193,12 @@ function createApiApp() {
       let text = "";
 
       if (isDocx) {
+        const mammoth = require("mammoth");
         const result = await mammoth.extractRawText({ buffer });
         text = result.value || "";
       } else if (isPdf) {
+        ensurePdfPolyfills();
+        const { PDFParse } = require("pdf-parse");
         const parser = new PDFParse({ data: new Uint8Array(buffer) });
         const result = await parser.getText();
         text = result.text || "";
@@ -273,6 +230,7 @@ function createApiApp() {
     }
 
     try {
+      const { convertLatexToOoxml } = require("./latexOoxml");
       const ooxml = await convertLatexToOoxml(String(latex), !!displayMode);
       return res.json({ ooxml });
     } catch (err) {
@@ -298,3 +256,47 @@ function createApiApp() {
 }
 
 module.exports = { createApiApp, PROXY_VERSION };
+
+function ensurePdfPolyfills() {
+  if (typeof globalThis.DOMMatrix === "undefined") {
+    globalThis.DOMMatrix = class DOMMatrix {
+      constructor() {
+        this.a = 1;
+        this.b = 0;
+        this.c = 0;
+        this.d = 1;
+        this.e = 0;
+        this.f = 0;
+      }
+      multiplySelf() {
+        return this;
+      }
+      preMultiplySelf() {
+        return this;
+      }
+      translateSelf() {
+        return this;
+      }
+      scaleSelf() {
+        return this;
+      }
+      rotateSelf() {
+        return this;
+      }
+      invertSelf() {
+        return this;
+      }
+      transformPoint(point) {
+        return point;
+      }
+    };
+  }
+
+  if (typeof globalThis.ImageData === "undefined") {
+    globalThis.ImageData = class ImageData {};
+  }
+
+  if (typeof globalThis.Path2D === "undefined") {
+    globalThis.Path2D = class Path2D {};
+  }
+}

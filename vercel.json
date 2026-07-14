@@ -4,6 +4,9 @@
   "outputDirectory": "dist",
   "installCommand": "npm install",
   "functions": {
+    "api/health.js": {
+      "maxDuration": 10
+    },
     "api/[...path].js": {
       "maxDuration": 10,
       "memory": 1024
