@@ -642,6 +642,8 @@ export function useChat(settings: AppSettings) {
   }, []);
 
   const reorderSessions = useCallback(async (orderedIds: string[]) => {
+    setSessions((prev) => orderSessions(prev, orderedIds));
+
     const store = await loadChatSessions();
     const validIds = new Set(store.sessions.map((session) => session.id));
     const nextOrder = orderedIds.filter((id) => validIds.has(id));

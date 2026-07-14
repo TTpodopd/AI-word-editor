@@ -1,6 +1,11 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { ChatSession } from "../types";
 import { formatSessionTime } from "../services/storageService";
+
+const DROPDOWN_GAP = 6;
+const DROPDOWN_BASE_WIDTH = 200;
+const DROPDOWN_MAX_HEIGHT = 180;
 
 interface SessionSwitcherProps {
   sessions: ChatSession[];
@@ -28,22 +33,85 @@ export function SessionSwitcher({
   const [editValue, setEditValue] = useState("");
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [dragOverId, setDragOverId] = useState<string | null>(null);
+  const [dropdownStyle, setDropdownStyle] = useState<React.CSSProperties>({});
   const rootRef = useRef<HTMLDivElement>(null);
+  const dropdownRef = useRef<HTMLDivElement>(null);
   const editInputRef = useRef<HTMLInputElement>(null);
+  const draggingRef = useRef<string | null>(null);
+  const sessionsRef = useRef(sessions);
+
+  useEffect(() => {
+    sessionsRef.current = sessions;
+  }, [sessions]);
+
+  const updateDropdownPosition = useCallback(() => {
+    const trigger = rootRef.current;
+    if (!trigger) return;
+
+    const rect = trigger.getBoundingClientRect();
+    const paneWidth = window.innerWidth;
+    const paneHeight = window.innerHeight;
+    const scale =
+      parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--ui-scale")) || 1;
+    const width = Math.min(DROPDOWN_BASE_WIDTH * scale, paneWidth - 16);
+    const maxHeight = Math.min(DROPDOWN_MAX_HEIGHT * scale, paneHeight - 24);
+    let left = rect.left;
+
+    if (left + width > paneWidth - 8) {
+      left = Math.max(8, paneWidth - width - 8);
+    }
+
+    if (dropUp) {
+      setDropdownStyle({
+        position: "fixed",
+        left: `${left}px`,
+        bottom: `${paneHeight - rect.top + DROPDOWN_GAP}px`,
+        width: `${width}px`,
+        maxHeight: `${maxHeight}px`,
+      });
+      return;
+    }
+
+    setDropdownStyle({
+      position: "fixed",
+      left: `${left}px`,
+      top: `${rect.bottom + DROPDOWN_GAP}px`,
+      width: `${width}px`,
+      maxHeight: `${maxHeight}px`,
+    });
+  }, [dropUp]);
 
   useEffect(() => {
     if (!open) return;
 
+    updateDropdownPosition();
+
     const handleClickOutside = (event: MouseEvent) => {
-      if (rootRef.current && !rootRef.current.contains(event.target as Node)) {
-        setOpen(false);
-        setEditingId(null);
+      const target = event.target as Node;
+      if (rootRef.current?.contains(target) || dropdownRef.current?.contains(target)) {
+        return;
       }
+      setOpen(false);
+      setEditingId(null);
     };
 
+    const handleReposition = () => updateDropdownPosition();
+
     document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, [open]);
+    window.addEventListener("resize", handleReposition);
+
+    const observer = new ResizeObserver(handleReposition);
+    observer.observe(document.documentElement);
+    if (rootRef.current) {
+      observer.observe(rootRef.current);
+    }
+
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+      window.removeEventListener("resize", handleReposition);
+      observer.disconnect();
+    };
+  }, [open, updateDropdownPosition]);
 
   useEffect(() => {
     if (editingId && editInputRef.current) {
@@ -84,43 +152,95 @@ export function SessionSwitcher({
     onDelete(sessionId);
   };
 
-  const handleDragStart = (event: React.DragEvent<HTMLDivElement>, sessionId: string) => {
-    if (editingId || disabled) {
-      event.preventDefault();
-      return;
-    }
+  const commitReorder = useCallback(
+    (dragId: string, targetId: string) => {
+      if (dragId === targetId) return;
+
+      const ids = sessionsRef.current.map((session) => session.id);
+      const fromIndex = ids.indexOf(dragId);
+      const toIndex = ids.indexOf(targetId);
+      if (fromIndex < 0 || toIndex < 0) return;
+
+      const nextIds = [...ids];
+      nextIds.splice(fromIndex, 1);
+      nextIds.splice(toIndex, 0, dragId);
+      onReorder(nextIds);
+    },
+    [onReorder]
+  );
+
+  const finishDrag = useCallback(() => {
+    draggingRef.current = null;
+    setDraggingId(null);
+    setDragOverId(null);
+    document.body.classList.remove("session-dragging");
+  }, []);
+
+  const dragListenersRef = useRef<{
+    onMove: (event: PointerEvent) => void;
+    onUp: (event: PointerEvent) => void;
+  } | null>(null);
+
+  const cleanupDragListeners = useCallback(() => {
+    const listeners = dragListenersRef.current;
+    if (!listeners) return;
+
+    document.removeEventListener("pointermove", listeners.onMove);
+    document.removeEventListener("pointerup", listeners.onUp);
+    document.removeEventListener("pointercancel", listeners.onUp);
+    dragListenersRef.current = null;
+  }, []);
+
+  useEffect(() => () => cleanupDragListeners(), [cleanupDragListeners]);
+
+  const handleDragHandlePointerDown = (
+    event: React.PointerEvent<HTMLSpanElement>,
+    sessionId: string
+  ) => {
+    if (editingId || disabled) return;
+
+    event.preventDefault();
+    event.stopPropagation();
+    cleanupDragListeners();
+
+    draggingRef.current = sessionId;
     setDraggingId(sessionId);
-    event.dataTransfer.effectAllowed = "move";
-    event.dataTransfer.setData("text/plain", sessionId);
-  };
+    document.body.classList.add("session-dragging");
 
-  const handleDragOver = (event: React.DragEvent<HTMLDivElement>, sessionId: string) => {
-    event.preventDefault();
-    if (!draggingId || draggingId === sessionId) return;
-    setDragOverId(sessionId);
-  };
+    const onMove = (moveEvent: PointerEvent) => {
+      if (!draggingRef.current) return;
 
-  const handleDrop = (event: React.DragEvent<HTMLDivElement>, targetId: string) => {
-    event.preventDefault();
-    if (!draggingId || draggingId === targetId) return;
+      const target = document
+        .elementFromPoint(moveEvent.clientX, moveEvent.clientY)
+        ?.closest<HTMLElement>("[data-session-id]");
+      const targetId = target?.dataset.sessionId;
 
-    const ids = sessions.map((session) => session.id);
-    const fromIndex = ids.indexOf(draggingId);
-    const toIndex = ids.indexOf(targetId);
-    if (fromIndex < 0 || toIndex < 0) return;
+      if (targetId && targetId !== draggingRef.current) {
+        setDragOverId(targetId);
+      }
+    };
 
-    const nextIds = [...ids];
-    nextIds.splice(fromIndex, 1);
-    nextIds.splice(toIndex, 0, draggingId);
-    onReorder(nextIds);
+    const onUp = (upEvent: PointerEvent) => {
+      if (!draggingRef.current) return;
 
-    setDraggingId(null);
-    setDragOverId(null);
-  };
+      const dragId = draggingRef.current;
+      const target = document
+        .elementFromPoint(upEvent.clientX, upEvent.clientY)
+        ?.closest<HTMLElement>("[data-session-id]");
+      const targetId = target?.dataset.sessionId;
 
-  const handleDragEnd = () => {
-    setDraggingId(null);
-    setDragOverId(null);
+      if (targetId) {
+        commitReorder(dragId, targetId);
+      }
+
+      cleanupDragListeners();
+      finishDrag();
+    };
+
+    dragListenersRef.current = { onMove, onUp };
+    document.addEventListener("pointermove", onMove);
+    document.addEventListener("pointerup", onUp);
+    document.addEventListener("pointercancel", onUp);
   };
 
   return (
@@ -141,119 +261,120 @@ export function SessionSwitcher({
         </svg>
       </button>
 
-      {open && (
-        <div className="session-dropdown">
-          <div className="session-dropdown-title">历史会话</div>
-          <div className="session-list">
-            {sessions.length === 0 && <div className="session-empty">暂无历史会话</div>}
-            {sessions.map((item) => {
-              const isActive = item.id === activeSessionId;
-              const isEditing = editingId === item.id;
+      {open &&
+        createPortal(
+          <div
+            ref={dropdownRef}
+            className={`session-dropdown session-dropdown--anchored${dropUp ? " drop-up" : ""}`}
+            style={dropdownStyle}
+          >
+            <div className="session-dropdown-title">历史会话</div>
+            <div className="session-list">
+              {sessions.length === 0 && <div className="session-empty">暂无历史会话</div>}
+              {sessions.map((item) => {
+                const isActive = item.id === activeSessionId;
+                const isEditing = editingId === item.id;
 
-              return (
-                <div
-                  key={item.id}
-                  className={`session-item${isActive ? " active" : ""}${
-                    draggingId === item.id ? " dragging" : ""
-                  }${dragOverId === item.id ? " drag-over" : ""}`}
-                  draggable={!isEditing && !disabled}
-                  onDragStart={(event) => handleDragStart(event, item.id)}
-                  onDragOver={(event) => handleDragOver(event, item.id)}
-                  onDrop={(event) => handleDrop(event, item.id)}
-                  onDragEnd={handleDragEnd}
-                >
-                  <button
-                    type="button"
-                    className="session-drag-handle"
-                    title="拖动排序"
-                    disabled={disabled || isEditing}
-                    onMouseDown={(event) => event.stopPropagation()}
+                return (
+                  <div
+                    key={item.id}
+                    data-session-id={item.id}
+                    className={`session-item${isActive ? " active" : ""}${
+                      draggingId === item.id ? " dragging" : ""
+                    }${dragOverId === item.id ? " drag-over" : ""}`}
                   >
-                    <svg width="10" height="10" viewBox="0 0 10 10" fill="currentColor" aria-hidden="true">
-                      <circle cx="2.5" cy="2" r="0.9" />
-                      <circle cx="7.5" cy="2" r="0.9" />
-                      <circle cx="2.5" cy="5" r="0.9" />
-                      <circle cx="7.5" cy="5" r="0.9" />
-                      <circle cx="2.5" cy="8" r="0.9" />
-                      <circle cx="7.5" cy="8" r="0.9" />
-                    </svg>
-                  </button>
+                    <span
+                      className="session-drag-handle"
+                      title="拖动排序"
+                      aria-label="拖动排序"
+                      onPointerDown={(event) => handleDragHandlePointerDown(event, item.id)}
+                    >
+                      <svg width="8" height="8" viewBox="0 0 10 10" fill="currentColor" aria-hidden="true">
+                        <circle cx="2.5" cy="2" r="0.9" />
+                        <circle cx="7.5" cy="2" r="0.9" />
+                        <circle cx="2.5" cy="5" r="0.9" />
+                        <circle cx="7.5" cy="5" r="0.9" />
+                        <circle cx="2.5" cy="8" r="0.9" />
+                        <circle cx="7.5" cy="8" r="0.9" />
+                      </svg>
+                    </span>
 
-                  <button
-                    type="button"
-                    className="session-item-body"
-                    onClick={() => handleSwitch(item.id)}
-                    disabled={disabled || isEditing}
-                  >
-                    <div className="session-item-main">
-                      {isEditing ? (
-                        <input
-                          ref={editInputRef}
-                          className="session-rename-input"
-                          value={editValue}
-                          onChange={(event) => setEditValue(event.target.value)}
-                          onClick={(event) => event.stopPropagation()}
-                          onKeyDown={(event) => {
-                            if (event.key === "Enter") {
-                              event.preventDefault();
-                              commitRename();
-                            } else if (event.key === "Escape") {
-                              event.preventDefault();
-                              cancelRename();
-                            }
-                          }}
-                          onBlur={commitRename}
-                        />
-                      ) : (
-                        <span className="session-item-title">{item.title}</span>
-                      )}
-                      <span className="session-item-time">{formatSessionTime(item.updatedAt)}</span>
-                    </div>
-                  </button>
-
-                  <div className="session-item-actions">
                     <button
                       type="button"
-                      className="session-action-btn"
-                      title="重命名"
-                      disabled={disabled}
-                      onClick={(event) => startRename(event, item)}
+                      className="session-item-body"
+                      onClick={() => handleSwitch(item.id)}
+                      disabled={disabled || isEditing}
                     >
-                      <svg viewBox="0 0 16 16" fill="none" aria-hidden="true">
-                        <path
-                          d="M11.2 2.8l2 2-7.2 7.2H4v-2l7.2-7.2z"
-                          stroke="currentColor"
-                          strokeWidth="1.3"
-                          strokeLinejoin="round"
-                        />
-                      </svg>
+                      <div className="session-item-main">
+                        {isEditing ? (
+                          <input
+                            ref={editInputRef}
+                            className="session-rename-input"
+                            value={editValue}
+                            onChange={(event) => setEditValue(event.target.value)}
+                            onClick={(event) => event.stopPropagation()}
+                            onKeyDown={(event) => {
+                              if (event.key === "Enter") {
+                                event.preventDefault();
+                                commitRename();
+                              } else if (event.key === "Escape") {
+                                event.preventDefault();
+                                cancelRename();
+                              }
+                            }}
+                            onBlur={commitRename}
+                          />
+                        ) : (
+                          <span className="session-item-title">{item.title}</span>
+                        )}
+                        <span className="session-item-time">{formatSessionTime(item.updatedAt)}</span>
+                      </div>
                     </button>
-                    {sessions.length > 1 && (
+
+                    <div className="session-item-actions">
                       <button
                         type="button"
-                        className="session-action-btn danger"
-                        title="删除会话"
+                        className="session-action-btn"
+                        title="重命名"
                         disabled={disabled}
-                        onClick={(event) => handleDelete(event, item.id)}
+                        onClick={(event) => startRename(event, item)}
                       >
                         <svg viewBox="0 0 16 16" fill="none" aria-hidden="true">
                           <path
-                            d="M3.5 4.5h9M6 4.5V3.5h4v1M5 4.5l.5 8h5l.5-8"
+                            d="M11.2 2.8l2 2-7.2 7.2H4v-2l7.2-7.2z"
                             stroke="currentColor"
                             strokeWidth="1.3"
-                            strokeLinecap="round"
                             strokeLinejoin="round"
                           />
                         </svg>
                       </button>
-                    )}
+                      {sessions.length > 1 && (
+                        <button
+                          type="button"
+                          className="session-action-btn danger"
+                          title="删除会话"
+                          disabled={disabled}
+                          onClick={(event) => handleDelete(event, item.id)}
+                        >
+                          <svg viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                            <path
+                              d="M3.5 4.5h9M6 4.5V3.5h4v1M5 4.5l.5 8h5l.5-8"
+                              stroke="currentColor"
+                              strokeWidth="1.3"
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                            />
+                          </svg>
+                        </button>
+                      )}
+                    </div>
                   </div>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
+                );
+              })}
+            </div>
+          </div>,
+          document.body
+        )}
     </div>
   );
 }

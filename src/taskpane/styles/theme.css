@@ -114,38 +114,55 @@ body {
 
 .session-dropdown {
   position: absolute;
-  top: calc(100% + 6px);
+  top: calc(100% + var(--space-xs));
   right: 0;
-  width: min(280px, calc(var(--pane-width) - 24px));
+  width: min(calc(200px * var(--ui-scale)), calc(var(--pane-width) - var(--space-lg) * 2));
   background: rgba(255, 255, 255, 0.98);
   border: 1px solid var(--color-accent-border-light);
-  border-radius: 12px;
-  box-shadow: 0 10px 28px rgba(var(--color-accent-rgb), 0.12);
+  border-radius: var(--radius-sm);
+  box-shadow: 0 8px 20px rgba(var(--color-accent-rgb), 0.1);
   z-index: 50;
   overflow: hidden;
   backdrop-filter: blur(10px);
 }
 
+.session-dropdown--anchored {
+  position: fixed;
+  top: auto;
+  right: auto;
+  bottom: auto;
+  z-index: 120;
+  display: flex;
+  flex-direction: column;
+}
+
 .session-dropdown-title {
-  padding: 10px 14px;
+  padding: calc(6px * var(--ui-scale)) calc(10px * var(--ui-scale));
   font-size: var(--font-xs);
   font-weight: 600;
   color: var(--color-text-secondary);
   border-bottom: 1px solid var(--color-border-light);
   background: linear-gradient(180deg, var(--color-accent-surface) 0%, var(--color-accent-soft) 100%);
+  flex-shrink: 0;
 }
 
 .session-list {
-  max-height: 260px;
+  max-height: calc(180px * var(--ui-scale));
   overflow-y: auto;
-  padding: 8px;
+  padding: calc(6px * var(--ui-scale));
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: calc(3px * var(--ui-scale));
+  flex: 1;
+  min-height: 0;
+}
+
+.session-dropdown--anchored .session-list {
+  max-height: none;
 }
 
 .session-empty {
-  padding: 20px 12px;
+  padding: calc(14px * var(--ui-scale)) calc(10px * var(--ui-scale));
   font-size: var(--font-xs);
   color: var(--color-text-muted);
   text-align: center;
@@ -156,13 +173,13 @@ body {
   border: 1px solid transparent;
   background: var(--color-accent-surface);
   text-align: left;
-  padding: 6px 6px 6px 2px;
+  padding: calc(3px * var(--ui-scale)) calc(4px * var(--ui-scale)) calc(3px * var(--ui-scale)) calc(1px * var(--ui-scale));
   display: flex;
   align-items: center;
-  gap: 2px;
+  gap: calc(1px * var(--ui-scale));
   position: relative;
   transition: background 0.12s, border-color 0.12s, box-shadow 0.12s;
-  border-radius: 10px;
+  border-radius: var(--radius-sm);
 }
 
 .session-item:hover {
@@ -173,7 +190,7 @@ body {
 .session-item.active {
   background: var(--color-accent-muted);
   border-color: var(--color-accent-border);
-  box-shadow: inset 3px 0 0 var(--color-accent);
+  box-shadow: inset 2px 0 0 var(--color-accent);
 }
 
 .session-item.dragging {
@@ -187,8 +204,8 @@ body {
 
 .session-drag-handle {
   flex-shrink: 0;
-  width: 20px;
-  height: 34px;
+  width: calc(14px * var(--ui-scale));
+  height: calc(26px * var(--ui-scale));
   border: none;
   background: transparent;
   color: var(--color-text-muted);
@@ -198,6 +215,8 @@ body {
   justify-content: center;
   border-radius: var(--radius-sm);
   padding: 0;
+  touch-action: none;
+  user-select: none;
 }
 
 .session-drag-handle:active {
@@ -215,29 +234,35 @@ body {
   border: none;
   background: transparent;
   text-align: left;
-  padding: 4px 0;
+  padding: calc(2px * var(--ui-scale)) 0;
   cursor: pointer;
   display: flex;
   align-items: center;
+}
+
+.session-item:hover .session-item-body,
+.session-item.active .session-item-body {
+  padding-right: calc(44px * var(--ui-scale));
 }
 
 .session-item-main {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 10px;
+  gap: calc(6px * var(--ui-scale));
   width: 100%;
   min-width: 0;
 }
 
 .session-item-title {
-  font-size: var(--font-sm);
+  font-size: var(--font-xs);
   font-weight: 600;
   color: var(--color-text);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   flex: 1;
+  min-width: 0;
 }
 
 .session-rename-input {
@@ -245,8 +270,8 @@ body {
   min-width: 0;
   border: 1px solid var(--color-accent-focus);
   border-radius: var(--radius-sm);
-  padding: 4px 8px;
-  font-size: var(--font-sm);
+  padding: calc(2px * var(--ui-scale)) calc(6px * var(--ui-scale));
+  font-size: var(--font-xs);
   font-family: inherit;
   color: var(--color-text);
   background: var(--color-surface);
@@ -258,32 +283,64 @@ body {
 }
 
 .session-item-time {
-  font-size: 10px;
+  font-size: clamp(9px, calc(9px * var(--ui-scale)), 11px);
   color: var(--color-text-muted);
   flex-shrink: 0;
-  padding: 2px 6px;
+  padding: calc(1px * var(--ui-scale)) calc(4px * var(--ui-scale));
   border-radius: var(--radius-pill);
   background: rgba(255, 255, 255, 0.7);
 }
 
 .session-item-actions {
+  position: absolute;
+  top: 50%;
+  right: calc(2px * var(--ui-scale));
+  transform: translateY(-50%);
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: calc(1px * var(--ui-scale));
   flex-shrink: 0;
   opacity: 0;
-  transition: opacity 0.12s;
-  padding-right: 2px;
+  visibility: hidden;
+  pointer-events: none;
+  transition: opacity 0.12s, visibility 0.12s;
+  padding-left: calc(6px * var(--ui-scale));
+  background: linear-gradient(
+    90deg,
+    rgba(245, 248, 255, 0) 0%,
+    var(--color-accent-surface) 36%,
+    var(--color-accent-surface) 100%
+  );
 }
 
 .session-item:hover .session-item-actions,
 .session-item.active .session-item-actions {
   opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+}
+
+.session-item:hover .session-item-actions {
+  background: linear-gradient(
+    90deg,
+    rgba(238, 243, 255, 0) 0%,
+    var(--color-accent-soft) 36%,
+    var(--color-accent-soft) 100%
+  );
+}
+
+.session-item.active .session-item-actions {
+  background: linear-gradient(
+    90deg,
+    rgba(220, 230, 255, 0) 0%,
+    var(--color-accent-muted) 36%,
+    var(--color-accent-muted) 100%
+  );
 }
 
 .session-action-btn {
-  width: 30px;
-  height: 30px;
+  width: calc(22px * var(--ui-scale));
+  height: calc(22px * var(--ui-scale));
   border: none;
   border-radius: var(--radius-sm);
   background: transparent;
@@ -296,8 +353,8 @@ body {
 }
 
 .session-action-btn svg {
-  width: 16px;
-  height: 16px;
+  width: calc(13px * var(--ui-scale));
+  height: calc(13px * var(--ui-scale));
 }
 
 .session-action-btn:hover {
@@ -859,9 +916,24 @@ body.chat-input-resizing * {
   color: var(--color-accent-hover);
 }
 
-.session-switcher.drop-up .session-dropdown {
+.session-switcher.drop-up .session-dropdown:not(.session-dropdown--anchored) {
   top: auto;
-  bottom: calc(100% + 6px);
+  bottom: calc(100% + var(--space-xs));
+  left: 0;
+  right: auto;
+}
+
+html[data-compact="true"] .session-dropdown {
+  width: min(calc(188px * var(--ui-scale)), calc(var(--pane-width) - var(--space-md) * 2));
+}
+
+body.session-dragging {
+  cursor: grabbing !important;
+  user-select: none !important;
+}
+
+body.session-dragging * {
+  cursor: grabbing !important;
 }
 
 .chat-input-area {
