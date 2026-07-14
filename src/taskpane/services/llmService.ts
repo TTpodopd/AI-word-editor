@@ -1,4 +1,4 @@
-import { ChatMessage, LLMProvider, ResolvedModel } from "../types";
+import { AppSettings, ChatMessage, LLMProvider, ResolvedModel } from "../types";
 import { apiFetch } from "./apiClient";
 
 export interface ChatRequest {
@@ -16,20 +16,27 @@ export interface ChatResponse {
 
 const API_BASE = "/api";
 
-export async function sendChat(request: ChatRequest): Promise<ChatResponse> {
-  const response = await apiFetch(`${API_BASE}/chat`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "X-API-Key": request.apiKey,
+export async function sendChat(
+  request: ChatRequest,
+  settingsOverride?: Pick<AppSettings, "proxyAccessToken">
+): Promise<ChatResponse> {
+  const response = await apiFetch(
+    `${API_BASE}/chat`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-API-Key": request.apiKey,
+      },
+      body: JSON.stringify({
+        provider: request.provider,
+        model: request.model,
+        messages: request.messages,
+        apiBaseUrl: request.apiBaseUrl,
+      }),
     },
-    body: JSON.stringify({
-      provider: request.provider,
-      model: request.model,
-      messages: request.messages,
-      apiBaseUrl: request.apiBaseUrl,
-    }),
-  });
+    settingsOverride
+  );
 
   const data = await response.json();
 
@@ -42,23 +49,30 @@ export async function sendChat(request: ChatRequest): Promise<ChatResponse> {
 
 export async function sendChatWithModel(
   model: ResolvedModel,
-  messages: ChatMessage[]
+  messages: ChatMessage[],
+  settingsOverride?: Pick<AppSettings, "proxyAccessToken">
 ): Promise<ChatResponse> {
   if (!model.apiKey) {
     return { content: "", error: "请先在设置中配置 API Key" };
   }
 
-  return sendChat({
-    provider: model.provider,
-    model: model.model,
-    apiKey: model.apiKey,
-    messages,
-    apiBaseUrl: model.apiBaseUrl,
-  });
+  return sendChat(
+    {
+      provider: model.provider,
+      model: model.model,
+      apiKey: model.apiKey,
+      messages,
+      apiBaseUrl: model.apiBaseUrl,
+    },
+    settingsOverride
+  );
 }
 
-export async function testConnection(model: ResolvedModel): Promise<{ ok: boolean; error?: string }> {
-  const result = await sendChatWithModel(model, [{ role: "user", content: "Hi" }]);
+export async function testConnection(
+  model: ResolvedModel,
+  settingsOverride?: Pick<AppSettings, "proxyAccessToken">
+): Promise<{ ok: boolean; error?: string }> {
+  const result = await sendChatWithModel(model, [{ role: "user", content: "Hi" }], settingsOverride);
   if (result.error) return { ok: false, error: result.error };
   return { ok: true };
 }

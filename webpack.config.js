@@ -3,17 +3,55 @@ const HtmlWebpackPlugin = require("html-webpack-plugin");
 const CopyWebpackPlugin = require("copy-webpack-plugin");
 const devCerts = require("office-addin-dev-certs");
 
-function getProdBaseUrl() {
-  const fromEnv =
-    process.env.ADDIN_BASE_URL ||
-    process.env.VERCEL_PROJECT_PRODUCTION_URL ||
-    process.env.VERCEL_URL;
+function normalizeBaseUrl(value) {
+  if (!value || typeof value !== "string") return null;
 
-  if (fromEnv) {
-    const url = fromEnv.startsWith("http") ? fromEnv : `https://${fromEnv}`;
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+
+  const url = trimmed.startsWith("http") ? trimmed : `https://${trimmed}`;
+
+  try {
+    const parsed = new URL(url);
+    const hostname = parsed.hostname.toLowerCase();
+
+    if (!hostname || hostname === "localhost") {
+      return null;
+    }
+
+    // Reject deployment IDs or other values without a real domain suffix.
+    if (!hostname.includes(".")) {
+      return null;
+    }
+
     return url.endsWith("/") ? url : `${url}/`;
+  } catch {
+    return null;
+  }
+}
+
+function getProdBaseUrl() {
+  const candidates = [
+    { name: "ADDIN_BASE_URL", value: process.env.ADDIN_BASE_URL },
+    { name: "VERCEL_PROJECT_PRODUCTION_URL", value: process.env.VERCEL_PROJECT_PRODUCTION_URL },
+    { name: "VERCEL_URL", value: process.env.VERCEL_URL },
+  ];
+
+  for (const candidate of candidates) {
+    const normalized = normalizeBaseUrl(candidate.value);
+    if (normalized) {
+      console.log(`[build] manifest base URL from ${candidate.name}: ${normalized}`);
+      return normalized;
+    }
+
+    if (candidate.value && candidate.value.trim()) {
+      console.warn(
+        `[build] Ignoring invalid ${candidate.name}: ${candidate.value.trim()}`
+      );
+    }
   }
 
+  console.warn("[build] No valid production URL found, falling back to localhost");
   return "https://localhost:3000/";
 }
 
@@ -78,6 +116,10 @@ module.exports = async (env, options) => {
       }),
       new CopyWebpackPlugin({
         patterns: [
+          {
+            from: "index.html",
+            to: "index.html",
+          },
           {
             from: "assets/*",
             to: "assets/[name][ext]",

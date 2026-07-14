@@ -259,7 +259,9 @@ export function SettingsPanel({ settings, onSave }: SettingsPanelProps) {
 
     setTesting(provider);
 
-    const result = resolved ? await testConnection(resolved) : { ok: false, error: "无可用模型" };
+    const result = resolved
+      ? await testConnection(resolved, { proxyAccessToken: localSettings.proxyAccessToken })
+      : { ok: false, error: "无可用模型" };
 
     setTestResults((prev) => ({ ...prev, [provider]: result }));
 
@@ -299,7 +301,9 @@ export function SettingsPanel({ settings, onSave }: SettingsPanelProps) {
 
     setTesting(providerId);
 
-    const result = resolved ? await testConnection(resolved) : { ok: false, error: "配置无效" };
+    const result = resolved
+      ? await testConnection(resolved, { proxyAccessToken: localSettings.proxyAccessToken })
+      : { ok: false, error: "配置无效" };
 
     setTestResults((prev) => ({ ...prev, [providerId]: result }));
 
@@ -423,7 +427,7 @@ export function SettingsPanel({ settings, onSave }: SettingsPanelProps) {
                 autoComplete="off"
               />
               <p className="settings-hint">
-                仅保存在本机 Word 插件存储中，不会提交到 GitHub。本地开发（未设置服务端令牌）时可留空。
+                与 Vercel 环境变量 PROXY_ACCESS_TOKEN 完全一致（区分大小写）。仅保存在本机，不会提交到 GitHub。
               </p>
             </div>
           </SettingsCollapsibleSection>

@@ -1,4 +1,7 @@
+import { AppSettings } from "../types";
 import { loadSettings } from "./storageService";
+
+export type ApiSettingsOverride = Pick<AppSettings, "proxyAccessToken">;
 
 function headersToRecord(headers?: HeadersInit): Record<string, string> {
   if (!headers) return {};
@@ -15,10 +18,13 @@ function headersToRecord(headers?: HeadersInit): Record<string, string> {
   return { ...headers };
 }
 
-export async function buildApiHeaders(extra: Record<string, string> = {}): Promise<Headers> {
+export async function buildApiHeaders(
+  extra: Record<string, string> = {},
+  settingsOverride?: ApiSettingsOverride
+): Promise<Headers> {
   const headers = new Headers();
   Object.entries(extra).forEach(([key, value]) => headers.set(key, value));
-  const settings = await loadSettings();
+  const settings = settingsOverride ?? (await loadSettings());
   const token = settings.proxyAccessToken?.trim();
 
   if (token) {
@@ -28,8 +34,12 @@ export async function buildApiHeaders(extra: Record<string, string> = {}): Promi
   return headers;
 }
 
-export async function apiFetch(input: string, init: RequestInit = {}): Promise<Response> {
-  const headers = await buildApiHeaders(headersToRecord(init.headers));
+export async function apiFetch(
+  input: string,
+  init: RequestInit = {},
+  settingsOverride?: ApiSettingsOverride
+): Promise<Response> {
+  const headers = await buildApiHeaders(headersToRecord(init.headers), settingsOverride);
 
   return fetch(input, {
     ...init,

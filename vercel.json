@@ -11,6 +11,10 @@
     "api/chat.js": {
       "maxDuration": 10,
       "memory": 1024
+    },
+    "api/web-search.js": {
+      "maxDuration": 10,
+      "memory": 1024
     }
   },
   "headers": [
