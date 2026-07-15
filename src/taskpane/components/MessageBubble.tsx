@@ -1,17 +1,19 @@
 import React, { useEffect, useState } from "react";
 import { normalizeAssistantContent } from "../utils/textFormat";
+import { formatFormFillPreview, resolveFormFillData } from "../services/formFillService";
 import { UIMessage } from "../types";
 
 interface MessageBubbleProps {
   message: UIMessage;
   editing: boolean;
   disabled: boolean;
-  onApply: (content: string, applyMode: "replace" | "insert") => void;
+  onApply: (content: string, applyMode: "replace" | "insert", formFill?: boolean) => void;
   onRegenerate: (messageId: string) => void;
   onStartEdit: (messageId: string) => void;
   onCancelEdit: () => void;
   onEditResend: (messageId: string, content: string) => void;
   onDelete: (messageId: string) => void;
+  onNotify?: (text: string) => void;
 }
 
 function PencilIcon() {
@@ -59,6 +61,42 @@ function TrashIcon() {
   );
 }
 
+function CopyIcon() {
+  return (
+    <svg width="10" height="10" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <rect x="5.5" y="5.5" width="7" height="7" rx="1" stroke="currentColor" strokeWidth="1.2" />
+      <path
+        d="M4.5 10.5h-1a1 1 0 01-1-1v-7a1 1 0 011-1h7a1 1 0 011 1v1"
+        stroke="currentColor"
+        strokeWidth="1.2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+async function copyToClipboard(text: string): Promise<boolean> {
+  try {
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch {
+    try {
+      const textarea = document.createElement("textarea");
+      textarea.value = text;
+      textarea.style.position = "fixed";
+      textarea.style.opacity = "0";
+      document.body.appendChild(textarea);
+      textarea.select();
+      const copied = document.execCommand("copy");
+      document.body.removeChild(textarea);
+      return copied;
+    } catch {
+      return false;
+    }
+  }
+}
+
 export function MessageBubble({
   message,
   editing,
@@ -69,6 +107,7 @@ export function MessageBubble({
   onCancelEdit,
   onEditResend,
   onDelete,
+  onNotify,
 }: MessageBubbleProps) {
   const isUser = message.role === "user";
   const [editText, setEditText] = useState(message.content);
@@ -76,6 +115,11 @@ export function MessageBubble({
   useEffect(() => {
     if (editing) setEditText(message.content);
   }, [editing, message.content]);
+
+  const handleCopy = async (text: string) => {
+    const copied = await copyToClipboard(text);
+    onNotify?.(copied ? "已复制" : "复制失败");
+  };
 
   if (isUser) {
     if (editing) {
@@ -114,6 +158,14 @@ export function MessageBubble({
           )}
           <div className="message-content">{message.content}</div>
           <div className="message-actions user-actions">
+            <button
+              className="msg-icon-btn"
+              title="复制"
+              onClick={() => handleCopy(message.content)}
+              disabled={disabled}
+            >
+              <CopyIcon />
+            </button>
             <button
               className="msg-icon-btn"
               title="编辑"
@@ -159,6 +211,14 @@ export function MessageBubble({
           {message.error || "请求失败"}
           <div className="message-actions assistant-inline-actions">
             <button
+              className="msg-icon-btn"
+              title="复制"
+              onClick={() => handleCopy(message.error || "请求失败")}
+              disabled={disabled}
+            >
+              <CopyIcon />
+            </button>
+            <button
               className="msg-icon-btn msg-delete-btn assistant-delete-btn"
               title="删除"
               onClick={() => onDelete(message.id)}
@@ -172,20 +232,25 @@ export function MessageBubble({
     );
   }
 
-  const applyLabel = "插入到文档";
+  const formData = resolveFormFillData(message.content);
+  const isFormFillMessage = message.formFill || !!formData;
+  const displayContent = formData
+    ? formatFormFillPreview(formData)
+    : normalizeAssistantContent(message.content);
+  const applyLabel = isFormFillMessage ? "填充到文档" : "插入到文档";
 
   return (
     <div className="message-row assistant">
       <div className="message-avatar">AI</div>
       <div className="message-bubble assistant-bubble">
         <div className="message-content assistant-content">
-          {normalizeAssistantContent(message.content)}
+          {displayContent}
         </div>
         <div className="message-actions">
           <button
             className="msg-action-btn primary"
             onClick={() =>
-              onApply(normalizeAssistantContent(message.content), "insert")
+              onApply(message.content, "insert", isFormFillMessage)
             }
             disabled={disabled}
           >
@@ -197,6 +262,14 @@ export function MessageBubble({
             disabled={disabled}
           >
             重新生成
+          </button>
+          <button
+            className="msg-action-btn"
+            title="复制"
+            onClick={() => handleCopy(displayContent)}
+            disabled={disabled}
+          >
+            复制
           </button>
           <button
             className="msg-icon-btn msg-delete-btn assistant-delete-btn"

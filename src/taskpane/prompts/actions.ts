@@ -49,6 +49,13 @@ export const ACTION_PROMPTS: ActionPrompt[] = [
       "你是一位专业的翻译助手。请将用户提供的文本翻译为英文（如果原文是英文则翻译为中文）。保持专业、流畅。直接输出翻译结果，不要解释过程。",
     userPromptTemplate: (text) => `请翻译以下文本：\n\n${text}`,
   },
+  {
+    id: "fillForm",
+    label: "填表",
+    slashCommand: "/填表",
+    systemPrompt: "",
+    userPromptTemplate: (text) => text,
+  },
 ];
 
 export function getActionById(id: ActionType): ActionPrompt | undefined {

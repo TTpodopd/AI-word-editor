@@ -3,7 +3,7 @@ import { DEFAULT_THEME_COLOR_ID } from "./constants/themeColors";
 
 export type LLMProvider = "deepseek" | "openai" | "qwen" | "custom";
 
-export type ActionType = "summarize" | "simplify" | "expand" | "polish" | "translate" | "custom";
+export type ActionType = "summarize" | "simplify" | "expand" | "polish" | "translate" | "fillForm" | "custom";
 
 export type AppView = "chat" | "settings";
 
@@ -84,6 +84,7 @@ export interface UIMessage {
   timestamp: number;
   attachments?: MessageAttachment[];
   applyMode?: "replace" | "insert";
+  formFill?: boolean;
   status?: "loading" | "error" | "done";
   error?: string;
 }

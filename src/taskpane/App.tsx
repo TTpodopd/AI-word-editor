@@ -12,6 +12,7 @@ import { getActionById } from "./prompts/actions";
 import { ensureOfficeReady, loadSettings, saveSettings, saveSelectedModel, saveWebSearchEnabled } from "./services/storageService";
 import { ensureSelectedModelVisible } from "./services/modelService";
 import { applyText, captureCursor, clearTrackedRange } from "./services/wordService";
+import { applyFormFillContent, clearFormFillScope, resolveFormFillData } from "./services/formFillService";
 import { getInsertFirstLineIndentChars } from "./utils/textFormat";
 import { applyThemeColor } from "./utils/theme";
 
@@ -102,7 +103,28 @@ export function App() {
   );
 
   const handleApply = useCallback(
-    async (content: string, _mode: "replace" | "insert") => {
+    async (content: string, _mode: "replace" | "insert", formFill?: boolean) => {
+      if (formFill) {
+        const result = await applyFormFillContent(content);
+        if (result.success) {
+          showToast(`已在选中区域填充 ${result.filledCount} 个字段`);
+        } else {
+          showToast(result.error || "填充失败");
+        }
+        return;
+      }
+
+      const formData = resolveFormFillData(content);
+      if (formData) {
+        const result = await applyFormFillContent(content);
+        if (result.success) {
+          showToast(`已在选中区域填充 ${result.filledCount} 个字段`);
+        } else {
+          showToast(result.error || "填充失败");
+        }
+        return;
+      }
+
       await captureCursor();
 
       const latestSettings = await loadSettings();
@@ -172,6 +194,7 @@ export function App() {
   const handleNewChat = useCallback(async () => {
     await newConversation();
     clearTrackedRange();
+    clearFormFillScope();
   }, [newConversation]);
 
   return (
@@ -213,6 +236,7 @@ export function App() {
               onCancelEdit={cancelEditMessage}
               onEditResend={handleEditResend}
               onDelete={handleDeleteMessage}
+              onNotify={showToast}
               onQuickAction={handleQuickAction}
               hasSelection={selection.hasSelection}
             />

@@ -23,6 +23,19 @@ import {
   historyMessageToApiContent,
   toUiAttachments,
 } from "../services/multimodalService";
+import {
+  buildFormFillMessages,
+  extractFormFillInstruction,
+  FORM_FILL_SLASH_COMMAND,
+  isFormFillCommand,
+} from "../prompts/formFill";
+import {
+  captureFormFillScope,
+  clearFormFillScope,
+  filterFormFillData,
+  resolveFormFillData,
+  scanFormFields,
+} from "../services/formFillService";
 
 function createId(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -40,6 +53,18 @@ function buildApiMessages(
   }));
 
   return [{ role: "system", content: system }, ...history];
+}
+
+function buildAttachmentInstruction(attachments: PendingAttachment[]): string {
+  return attachments
+    .filter((item) => item.kind === "document" && item.textContent?.trim())
+    .map((item) => `【附件：${item.name}】\n${item.textContent!.trim()}`)
+    .join("\n\n");
+}
+
+function buildFormFillInstruction(content: string, attachments: PendingAttachment[]): string {
+  const parts = [extractFormFillInstruction(content), buildAttachmentInstruction(attachments)].filter(Boolean);
+  return parts.join("\n\n");
 }
 
 function buildDisplayContent(text: string, attachments: PendingAttachment[]): string {
@@ -273,6 +298,72 @@ export function useChat(settings: AppSettings) {
     [getCurrentModel, getLatestSettings, updateMessage]
   );
 
+  const requestFormFillAssistant = useCallback(
+    async (
+      assistantId: string,
+      userInstruction: string,
+      pendingAttachments: PendingAttachment[] = []
+    ) => {
+      const model = getCurrentModel();
+      if (!model) {
+        await updateMessage(assistantId, {
+          status: "error",
+          error: "请先在设置中选择并配置模型",
+          content: "",
+        });
+        return;
+      }
+
+      try {
+        const scanResult = await scanFormFields();
+        if (scanResult.fieldLabels.length === 0 && !scanResult.hasPersonnelTable && !scanResult.hasOptionChecks) {
+          await updateMessage(assistantId, {
+            status: "error",
+            error: "选中区域内未检测到可填写的表单字段或方框选项，请扩大选中范围后重试",
+            content: "",
+          });
+          return;
+        }
+
+        const instructionParts = [userInstruction, buildAttachmentInstruction(pendingAttachments)]
+          .filter(Boolean)
+          .join("\n\n");
+
+        const latestSettings = await getLatestSettings();
+        const apiMessages = buildFormFillMessages(latestSettings, scanResult, instructionParts);
+        const response = await sendChatWithModel(model, apiMessages);
+
+        if (response.error) {
+          await updateMessage(assistantId, {
+            status: "error",
+            error: response.error,
+            content: "",
+          });
+          return;
+        }
+
+        const rawContent = normalizeAssistantContent(response.content);
+        const resolved = resolveFormFillData(rawContent);
+        const filtered = resolved ? filterFormFillData(resolved, scanResult) : null;
+        const content = filtered ? JSON.stringify(filtered, null, 2) : rawContent;
+
+        await updateMessage(assistantId, {
+          status: "done",
+          content,
+          applyMode: "insert",
+          formFill: true,
+        });
+      } catch (err) {
+        await updateMessage(assistantId, {
+          status: "error",
+          error: err instanceof Error ? err.message : "填表请求失败",
+          content: "",
+        });
+      }
+    },
+    [getCurrentModel, getLatestSettings, updateMessage]
+  );
+
   const sendMessage = useCallback(
     async (content: string, selectedText?: string, attachments: PendingAttachment[] = []) => {
       const trimmed = content.trim();
@@ -284,9 +375,26 @@ export function useChat(settings: AppSettings) {
       }
 
       setLoading(true);
-      const { text, applyMode: mode } = await prepareContext(selectedText);
+      const isFormFill = isFormFillCommand(trimmed);
+      let text = "";
+      let mode: ApplyMode = "insert";
 
-      const displayContent = buildDisplayContent(trimmed, attachments);
+      if (isFormFill) {
+        const scope = await captureFormFillScope();
+        if (!scope.success) {
+          setLoading(false);
+          return scope.error || "请先在文档中选中需要填写的表单区域";
+        }
+        text = scope.text;
+      } else {
+        const contextResult = await prepareContext(selectedText);
+        text = contextResult.text;
+        mode = contextResult.applyMode;
+      }
+
+      const displayContent = isFormFill
+        ? trimmed || FORM_FILL_SLASH_COMMAND
+        : buildDisplayContent(trimmed, attachments);
 
       const userMessage: UIMessage = {
         id: createId(),
@@ -310,17 +418,26 @@ export function useChat(settings: AppSettings) {
       const nextMessages = [...current.messages, userMessage, assistantMessage];
       await persistSession({ ...current, messages: nextMessages });
 
-      await requestAssistant(
-        assistantMessage.id,
-        displayContent,
-        text,
-        nextMessages,
-        attachments
-      );
+      if (isFormFill) {
+        await requestFormFillAssistant(
+          assistantMessage.id,
+          buildFormFillInstruction(trimmed, attachments),
+          attachments
+        );
+      } else {
+        await requestAssistant(
+          assistantMessage.id,
+          displayContent,
+          text,
+          nextMessages,
+          attachments
+        );
+      }
+
       setLoading(false);
       return null;
     },
-    [getCurrentModel, loading, persistSession, prepareContext, requestAssistant]
+    [getCurrentModel, loading, persistSession, prepareContext, requestAssistant, requestFormFillAssistant]
   );
 
   const runDirectAction = useCallback(
@@ -607,6 +724,8 @@ export function useChat(settings: AppSettings) {
 
     setEditingMessageId(null);
     setApplyMode("insert");
+    clearTrackedRange();
+    clearFormFillScope();
 
     sessionRef.current = fresh;
     setSession(fresh);

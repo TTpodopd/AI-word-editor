@@ -5,6 +5,7 @@ import { AppSettings, ChatSession, PendingAttachment } from "../types";
 import { getVisibleModels, resolveModel } from "../services/modelService";
 
 import { ACTION_PROMPTS } from "../prompts/actions";
+import { FORM_FILL_SLASH_COMMAND } from "../prompts/formFill";
 
 import { ChatBottomActions } from "./ChatBottomActions";
 
@@ -281,7 +282,14 @@ export function ChatInput({
 
     const matchedAction = ACTION_PROMPTS.find((a) => a.slashCommand === trimmed);
 
-    if (matchedAction) {
+    if (matchedAction?.id === "fillForm") {
+      if (!hasSelection) {
+        notifyError("请先在文档中选中需要填写的表单区域");
+        return;
+      }
+      const error = await onSend(trimmed, attachments);
+      if (error) notifyError(error);
+    } else if (matchedAction) {
 
       if (hasSelection) {
 
@@ -341,6 +349,19 @@ export function ChatInput({
 
 
   const handleSlashSelect = (actionId: string) => {
+    if (actionId === "fillForm") {
+      if (!hasSelection) {
+        notifyError("请先在文档中选中需要填写的表单区域");
+        return;
+      }
+      const prefix = `${FORM_FILL_SLASH_COMMAND} `;
+      setInput(prefix);
+      if (textareaRef.current) {
+        textareaRef.current.value = prefix;
+        textareaRef.current.focus();
+      }
+      return;
+    }
 
     if (hasSelection) {
 

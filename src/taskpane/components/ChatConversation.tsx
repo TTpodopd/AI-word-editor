@@ -8,12 +8,13 @@ interface ChatConversationProps {
   messages: UIMessage[];
   loading: boolean;
   editingMessageId: string | null;
-  onApply: (content: string, applyMode: "replace" | "insert") => void;
+  onApply: (content: string, applyMode: "replace" | "insert", formFill?: boolean) => void;
   onRegenerate: (messageId: string) => void;
   onStartEdit: (messageId: string) => void;
   onCancelEdit: () => void;
   onEditResend: (messageId: string, content: string) => void;
   onDelete: (messageId: string) => void;
+  onNotify?: (text: string) => void;
   onQuickAction: (actionId: string) => void;
   hasSelection: boolean;
 }
@@ -28,6 +29,7 @@ export function ChatConversation({
   onCancelEdit,
   onEditResend,
   onDelete,
+  onNotify,
   onQuickAction,
   hasSelection,
 }: ChatConversationProps) {
@@ -35,7 +37,7 @@ export function ChatConversation({
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages, loading, editingMessageId]);
+  }, [messages, loading]);
 
   if (messages.length === 0) {
     return (
@@ -62,6 +64,7 @@ export function ChatConversation({
             onCancelEdit={onCancelEdit}
             onEditResend={onEditResend}
             onDelete={onDelete}
+            onNotify={onNotify}
           />
         ))}
         {loading && messages[messages.length - 1]?.status !== "loading" && (
