@@ -37,6 +37,7 @@ function sanitizeMessage(message: Partial<UIMessage>): UIMessage | null {
     formFill: message.formFill,
     sourceText: message.sourceText,
     actionLabel: message.actionLabel,
+    actionId: message.actionId,
     searchInfo: message.searchInfo,
     status: message.status || "done",
     error: message.error,

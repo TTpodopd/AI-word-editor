@@ -19,6 +19,7 @@ interface ChatConversationProps {
   onNotify?: (text: string) => void;
   onQuickAction: (actionId: string) => void;
   hasSelection: boolean;
+  selectionText?: string;
   onWelcomeCardClick?: (cardId: string) => void;
 }
 
@@ -36,6 +37,7 @@ export function ChatConversation({
   onNotify,
   onQuickAction,
   hasSelection,
+  selectionText,
   onWelcomeCardClick,
 }: ChatConversationProps) {
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -51,7 +53,11 @@ export function ChatConversation({
         {onWelcomeCardClick ? (
           <WelcomeView onCardClick={onWelcomeCardClick} />
         ) : (
-          <ChatEmptyState hasSelection={hasSelection} onQuickAction={onQuickAction} />
+          <ChatEmptyState
+            hasSelection={hasSelection}
+            selectionText={selectionText}
+            onQuickAction={onQuickAction}
+          />
         )}
       </div>
     );

@@ -18,6 +18,7 @@ import { applyFormFillContent, clearFormFillScope, resolveFormFillData } from ".
 import { getInsertFirstLineIndentChars, prepareTextForWordDocument } from "./utils/textFormat";
 import { applyThemeColor } from "./utils/theme";
 import { localizeErrorMessage } from "./utils/localizeErrorMessage";
+import { detectSelectionContentKind } from "./utils/selectionContentType";
 
 export function App() {
   const [view, setView] = useState<AppView>("chat");
@@ -149,7 +150,9 @@ export function App() {
         return;
       }
 
-      const formData = resolveFormFillData(content);
+      const skipFormFill =
+        !!referenceText?.trim() && detectSelectionContentKind(referenceText) === "code";
+      const formData = skipFormFill ? null : resolveFormFillData(content);
       if (formData) {
         const result = await applyFormFillContent(content);
         if (result.success) {
@@ -283,7 +286,12 @@ export function App() {
 
       if (cardId === "adjust") {
         if (selection.hasSelection) {
-          showToast("已检测到选区，可使用顶部快捷按钮或 /润色 等指令");
+          const kind = detectSelectionContentKind(selection.text);
+          showToast(
+            kind === "code"
+              ? "已检测到代码选区，可使用顶部快捷按钮或 /优化、/注释、/删减 等指令"
+              : "已检测到文本选区，可使用顶部快捷按钮或 /润色、/校对 等指令"
+          );
         } else {
           showToast("请先在 Word 中选中文本，再使用润色、精简等操作");
         }
@@ -296,7 +304,7 @@ export function App() {
         showToast("已进入写作助手，可使用「从 Word 文档续写」分析结构");
       }
     },
-    [selection.hasSelection, showToast]
+    [selection.hasSelection, selection.text, showToast]
   );
 
   const handleWritingProjectChange = useCallback(
@@ -380,6 +388,7 @@ export function App() {
                   onNotify={showToast}
                   onQuickAction={handleQuickAction}
                   hasSelection={selection.hasSelection}
+                  selectionText={selection.text}
                   onWelcomeCardClick={handleWelcomeCardClick}
                 />
               </div>

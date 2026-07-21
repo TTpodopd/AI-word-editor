@@ -55,6 +55,28 @@ export function formatTokenCount(tokens: number): string {
   return String(tokens);
 }
 
+/** 格式化上下文占用百分比（避免小用量被四舍五入成 0%） */
+export function formatContextUsagePercent(percent: number): string {
+  if (percent <= 0) return "0";
+  if (percent < 0.1) return "<0.1";
+  if (percent < 10) {
+    const rounded = Math.round(percent * 10) / 10;
+    return Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(1);
+  }
+  return String(Math.round(percent));
+}
+
+/** 进度条宽度：有占用时保证最小可见宽度 */
+export function getContextUsageBarWidthPercent(percent: number): number {
+  if (percent <= 0) return 0;
+  return Math.min(Math.max(percent, 1.5), 100);
+}
+
+function computeContextUsagePercent(usedTokens: number, budgetTokens: number): number {
+  if (budgetTokens <= 0 || usedTokens <= 0) return 0;
+  return Math.round((usedTokens / budgetTokens) * 1000) / 10;
+}
+
 export function computeContextUsageStats(
   messages: ChatMessage[],
   charBudget = DEFAULT_HISTORY_CHAR_BUDGET
@@ -65,7 +87,7 @@ export function computeContextUsageStats(
   const usedChars = estimateMessagesChars(trimmed);
   const usedTokens = charsToEstimatedTokens(usedChars);
   const rawChars = estimateMessagesChars(messages);
-  const percent = budgetChars > 0 ? Math.round((usedChars / budgetChars) * 100) : 0;
+  const percent = computeContextUsagePercent(usedTokens, budgetTokens);
 
   return {
     budgetChars,

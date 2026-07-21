@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { prepareTextForWordDocument } from "../utils/textFormat";
 import { openExternalLink } from "../utils/openExternalLink";
-import { formatFormFillPreview, resolveFormFillData } from "../services/formFillService";
+import { formatFormFillPreview, resolveFormFillData, shouldTreatAsFormFill } from "../services/formFillService";
 import { UIMessage, MessageSearchInfo } from "../types";
 import { TextDiffPreview } from "./TextDiffPreview";
 
@@ -298,7 +298,11 @@ export function MessageBubble({
           )}
           {onStop && (
             <div className="message-actions">
-              <button className="msg-action-btn stop-btn" onClick={onStop} disabled={disabled}>
+              <button
+                type="button"
+                className="msg-action-btn stop-btn"
+                onClick={onStop}
+              >
                 停止
               </button>
             </div>
@@ -337,8 +341,8 @@ export function MessageBubble({
     );
   }
 
-  const formData = resolveFormFillData(message.content);
-  const isFormFillMessage = message.formFill || !!formData;
+  const isFormFillMessage = shouldTreatAsFormFill(message);
+  const formData = isFormFillMessage ? resolveFormFillData(message.content) : null;
   const revisedContent = formData
     ? formatFormFillPreview(formData)
     : prepareTextForWordDocument(message.content, message.sourceText || "");

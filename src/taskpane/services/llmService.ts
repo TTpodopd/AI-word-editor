@@ -50,6 +50,14 @@ async function consumeSseStream(
   const decoder = new TextDecoder();
   let buffer = "";
   let fullContent = "";
+  let onAbort: (() => void) | undefined;
+
+  if (signal) {
+    onAbort = () => {
+      void reader.cancel().catch(() => undefined);
+    };
+    signal.addEventListener("abort", onAbort, { once: true });
+  }
 
   try {
     while (true) {
@@ -96,6 +104,10 @@ async function consumeSseStream(
       content: fullContent,
       error: error instanceof Error ? error.message : "流式响应读取失败",
     };
+  } finally {
+    if (signal && onAbort) {
+      signal.removeEventListener("abort", onAbort);
+    }
   }
 
   return { content: fullContent };

@@ -27,20 +27,30 @@ function parseExcludeDomains(raw: string): string[] {
 async function fetchWithTimeout(
   url: string,
   options: RequestInit,
-  timeoutMs: number
+  timeoutMs: number,
+  externalSignal?: AbortSignal
 ): Promise<Response> {
   const controller = new AbortController();
   const timer = window.setTimeout(() => controller.abort(), timeoutMs);
+  const onExternalAbort = () => controller.abort();
+  externalSignal?.addEventListener("abort", onExternalAbort, { once: true });
 
   try {
+    if (externalSignal?.aborted) {
+      throw new DOMException("Aborted", "AbortError");
+    }
     return await apiFetch(url, { ...options, signal: controller.signal });
   } catch (error) {
+    if (controller.signal.aborted || externalSignal?.aborted) {
+      throw new DOMException("Aborted", "AbortError");
+    }
     if (error instanceof DOMException && error.name === "AbortError") {
       throw new Error(`请求超时（${Math.round(timeoutMs / 1000)} 秒），请检查网络或代理服务`);
     }
     throw new Error("无法连接本地代理服务，请先运行 npm start 并保持终端开启");
   } finally {
     window.clearTimeout(timer);
+    externalSignal?.removeEventListener("abort", onExternalAbort);
   }
 }
 
@@ -82,10 +92,18 @@ export function formatWebSearchResults(results: WebSearchResultItem[]): string {
     .join("\n\n");
 }
 
-export async function searchWeb(query: string, settings: WebSearchSettings): Promise<WebSearchResponse> {
+export async function searchWeb(
+  query: string,
+  settings: WebSearchSettings,
+  signal?: AbortSignal
+): Promise<WebSearchResponse> {
   const apiKey = settings.apiKey.trim();
   if (!apiKey) {
     return { results: [], error: "未配置 Tavily API Key" };
+  }
+
+  if (signal?.aborted) {
+    return { results: [], error: "已取消" };
   }
 
   try {
@@ -104,7 +122,8 @@ export async function searchWeb(query: string, settings: WebSearchSettings): Pro
           excludeDomains: parseExcludeDomains(settings.excludeDomains),
         }),
       },
-      DEFAULT_TIMEOUT_MS
+      DEFAULT_TIMEOUT_MS,
+      signal
     );
 
     const data = await readJsonResponse(response);
@@ -118,6 +137,9 @@ export async function searchWeb(query: string, settings: WebSearchSettings): Pro
     const results = Array.isArray(data.results) ? (data.results as WebSearchResultItem[]) : [];
     return { results };
   } catch (error) {
+    if (signal?.aborted || (error instanceof DOMException && error.name === "AbortError")) {
+      return { results: [], error: "已取消" };
+    }
     return {
       results: [],
       error: error instanceof Error ? error.message : "联网搜索失败",
@@ -169,7 +191,8 @@ export async function testWebSearchConnection(settings: WebSearchSettings): Prom
 export async function augmentMessagesWithWebSearch(
   apiMessages: ChatMessage[],
   userQuery: string,
-  webSearch: WebSearchSettings
+  webSearch: WebSearchSettings,
+  signal?: AbortSignal
 ): Promise<{
   messages: ChatMessage[];
   searchQuery?: string;
@@ -185,7 +208,10 @@ export async function augmentMessagesWithWebSearch(
     return { messages: apiMessages };
   }
 
-  const searchResult = await searchWeb(searchQuery, webSearch);
+  const searchResult = await searchWeb(searchQuery, webSearch, signal);
+  if (signal?.aborted) {
+    return { messages: apiMessages, searchQuery, searchError: "已取消" };
+  }
   const messages = apiMessages.map((message) => ({ ...message }));
 
   if (messages[0]?.role === "system") {

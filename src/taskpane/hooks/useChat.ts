@@ -136,6 +136,8 @@ export function useChat(
   const sessionRef = useRef<ChatSession | null>(null);
   const settingsRef = useRef<AppSettings>(settings);
   const abortControllerRef = useRef<AbortController | null>(null);
+  const activeAssistantIdRef = useRef<string | null>(null);
+  const generationStoppedRef = useRef(false);
   const onNotifyRef = useRef(options?.onNotify);
   const hasSelectionRef = useRef(options?.hasSelection ?? false);
 
@@ -298,6 +300,21 @@ export function useChat(
     setSession(nextSession);
   }, []);
 
+  const startGeneration = useCallback((assistantId: string) => {
+    abortControllerRef.current?.abort();
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
+    activeAssistantIdRef.current = assistantId;
+    generationStoppedRef.current = false;
+    return controller.signal;
+  }, []);
+
+  const endGeneration = useCallback(() => {
+    abortControllerRef.current = null;
+    activeAssistantIdRef.current = null;
+    generationStoppedRef.current = false;
+  }, []);
+
   const beginRequest = useCallback(() => {
     abortControllerRef.current?.abort();
     abortControllerRef.current = new AbortController();
@@ -309,8 +326,42 @@ export function useChat(
   }, []);
 
   const stopGeneration = useCallback(() => {
+    generationStoppedRef.current = true;
     abortControllerRef.current?.abort();
-  }, []);
+
+    let assistantId = activeAssistantIdRef.current;
+    if (!assistantId) {
+      const current = sessionRef.current;
+      for (let i = (current?.messages.length ?? 0) - 1; i >= 0; i -= 1) {
+        const message = current?.messages[i];
+        if (message?.role === "assistant" && message.status === "loading") {
+          assistantId = message.id;
+          break;
+        }
+      }
+    }
+
+    if (assistantId) {
+      const current = sessionRef.current;
+      const message = current?.messages.find((item) => item.id === assistantId);
+      if (message?.status === "loading") {
+        const partialContent = message.content.trim();
+        const finalContent = partialContent || "（已停止生成）";
+        patchMessageLocal(assistantId, {
+          status: "done",
+          content: finalContent,
+        });
+        void updateMessage(assistantId, {
+          status: "done",
+          content: finalContent,
+        });
+      }
+    }
+
+    setLoading(false);
+    abortControllerRef.current = null;
+    activeAssistantIdRef.current = null;
+  }, [patchMessageLocal, updateMessage]);
 
   const prepareContext = useCallback(async (selectedText?: string) => {
     let text = selectedText?.trim() || "";
@@ -340,11 +391,12 @@ export function useChat(
         searchInfo?: MessageSearchInfo;
       } = {}
     ) => {
-      const signal = beginRequest();
+      const signal = abortControllerRef.current?.signal ?? startGeneration(assistantId);
 
       const response = await sendChatStreamWithModel(model, apiMessages, {
         signal,
         onChunk: (_delta, fullContent) => {
+          if (generationStoppedRef.current) return;
           patchMessageLocal(assistantId, {
             content: fullContent,
             status: "loading",
@@ -352,7 +404,12 @@ export function useChat(
         },
       });
 
-      endRequest();
+      const wasStopped = generationStoppedRef.current;
+      endGeneration();
+
+      if (wasStopped) {
+        return;
+      }
 
       if (response.error && !response.aborted) {
         await updateMessage(assistantId, {
@@ -383,7 +440,7 @@ export function useChat(
         searchInfo: meta.searchInfo,
       });
     },
-    [beginRequest, endRequest, patchMessageLocal, updateMessage]
+    [endGeneration, patchMessageLocal, startGeneration, updateMessage]
   );
 
   const requestAssistant = useCallback(
@@ -418,6 +475,10 @@ export function useChat(
         return;
       }
 
+      startGeneration(assistantId);
+      const signal = abortControllerRef.current?.signal;
+      if (!signal || generationStoppedRef.current) return;
+
       const historyBeforeCurrent = priorMessages.filter((m) => m.id !== assistantId);
       const priorDone = historyBeforeCurrent.filter(
         (m) => m.status === "done" && (m.content.trim() || m.attachments?.length)
@@ -443,7 +504,14 @@ export function useChat(
       }
 
       const { messages: finalMessages, searchQuery, searchResults, searchError } =
-        await augmentMessagesWithWebSearch(budgetMessages, userContent, latestSettings.webSearch);
+        await augmentMessagesWithWebSearch(
+          budgetMessages,
+          userContent,
+          latestSettings.webSearch,
+          signal
+        );
+
+      if (generationStoppedRef.current) return;
 
       const searchInfo = buildSearchInfo(searchQuery, searchResults, searchError);
       if (searchInfo) {
@@ -458,7 +526,7 @@ export function useChat(
       });
       syncContextUsageFromApiMessages(finalMessages);
     },
-    [getCurrentModel, getLatestSettings, patchMessageLocal, streamAssistantResponse, syncContextUsageFromApiMessages, updateMessage]
+    [getCurrentModel, getLatestSettings, patchMessageLocal, startGeneration, streamAssistantResponse, syncContextUsageFromApiMessages, updateMessage]
   );
 
   const requestFormFillAssistant = useCallback(
@@ -478,6 +546,10 @@ export function useChat(
       }
 
       try {
+        startGeneration(assistantId);
+        const signal = abortControllerRef.current?.signal;
+        if (!signal || generationStoppedRef.current) return;
+
         const scanResult = await scanFormFields();
         if (scanResult.fieldLabels.length === 0 && !scanResult.hasPersonnelTable && !scanResult.hasOptionChecks) {
           await updateMessage(assistantId, {
@@ -494,7 +566,9 @@ export function useChat(
 
         const latestSettings = await getLatestSettings();
         const apiMessages = buildFormFillMessages(latestSettings, scanResult, instructionParts);
-        const response = await sendChatWithModel(model, apiMessages);
+        const response = await sendChatWithModel(model, apiMessages, undefined, signal);
+
+        if (generationStoppedRef.current) return;
 
         if (response.error) {
           await updateMessage(assistantId, {
@@ -517,14 +591,19 @@ export function useChat(
           formFill: true,
         });
       } catch (err) {
+        if (generationStoppedRef.current) return;
         await updateMessage(assistantId, {
           status: "error",
           error: err instanceof Error ? err.message : "填表请求失败",
           content: "",
         });
+      } finally {
+        if (!generationStoppedRef.current) {
+          endGeneration();
+        }
       }
     },
-    [getCurrentModel, getLatestSettings, updateMessage]
+    [endGeneration, getCurrentModel, getLatestSettings, startGeneration, updateMessage]
   );
 
   const sendMessage = useCallback(
@@ -674,7 +753,8 @@ export function useChat(
       }
 
       setLoading(true);
-      setApplyMode("replace");
+      const isCodeEditAction = action.id !== "explainCode";
+      setApplyMode(isCodeEditAction ? "replace" : "insert");
 
       const userMessage: UIMessage = {
         id: createId(),
@@ -690,9 +770,10 @@ export function useChat(
         content: "",
         timestamp: Date.now(),
         status: "loading",
-        applyMode: "replace",
-        sourceText: text,
+        applyMode: isCodeEditAction ? "replace" : "insert",
+        sourceText: isCodeEditAction ? text : undefined,
         actionLabel: action.label,
+        actionId: action.id,
       };
 
       const current = sessionRef.current ?? (await loadChatSession());
@@ -711,15 +792,16 @@ export function useChat(
 
       const latestSettings = await getLatestSettings();
       const apiMessages = buildMessages(action, text, latestSettings);
+      startGeneration(assistantMessage.id);
       await streamAssistantResponse(assistantMessage.id, model, apiMessages, {
-        applyMode: "replace",
-        sourceText: text,
+        applyMode: isCodeEditAction ? "replace" : "insert",
+        sourceText: isCodeEditAction ? text : undefined,
         actionLabel: action.label,
       });
       syncContextUsageFromApiMessages(apiMessages);
       setLoading(false);
     },
-    [getCurrentModel, getLatestSettings, loading, persistSession, streamAssistantResponse, syncContextUsageFromApiMessages, updateMessage]
+    [getCurrentModel, getLatestSettings, loading, persistSession, startGeneration, streamAssistantResponse, syncContextUsageFromApiMessages, updateMessage]
   );
 
   const regenerateMessage = useCallback(

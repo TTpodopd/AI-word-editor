@@ -1,5 +1,9 @@
 /* global Word */
 
+import { UIMessage } from "../types";
+import { isCodeActionId } from "../prompts/actions";
+import { detectSelectionContentKind } from "../utils/selectionContentType";
+
 export interface FormFillData {
   fields: Record<string, string>;
   checkboxes?: Record<string, string>;
@@ -621,6 +625,17 @@ export function parseFormFillFromProse(content: string): FormFillData | null {
 
 export function resolveFormFillData(content: string): FormFillData | null {
   return parseFormFillJson(content) || parseFormFillFromProse(content);
+}
+
+export function shouldTreatAsFormFill(
+  message: Pick<UIMessage, "formFill" | "actionId" | "sourceText" | "content">
+): boolean {
+  if (message.formFill) return true;
+  if (isCodeActionId(message.actionId)) return false;
+  if (message.sourceText?.trim() && detectSelectionContentKind(message.sourceText) === "code") {
+    return false;
+  }
+  return !!resolveFormFillData(message.content);
 }
 
 export function filterFormFillData(data: FormFillData, scan: FormScanResult): FormFillData {

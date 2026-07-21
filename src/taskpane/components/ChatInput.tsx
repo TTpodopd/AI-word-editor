@@ -1,4 +1,4 @@
-import React, { useRef, useState } from "react";
+import React, { useMemo, useRef, useState } from "react";
 
 import { AppSettings, ChatSession, PendingAttachment } from "../types";
 import { ContextUsageStats } from "../utils/chatHistoryBudget";
@@ -6,7 +6,7 @@ import { ContextUsageIndicator } from "./ContextUsageIndicator";
 
 import { getVisibleModels, resolveModel } from "../services/modelService";
 
-import { ACTION_PROMPTS } from "../prompts/actions";
+import { ACTION_PROMPTS, getActionBySlashCommand, getActionsForSelection } from "../prompts/actions";
 import { FORM_FILL_SLASH_COMMAND } from "../prompts/formFill";
 
 import { ChatBottomActions } from "./ChatBottomActions";
@@ -156,8 +156,13 @@ export function ChatInput({
 
 
   const placeholder = hasSelection
-    ? "基于引用内容输入指令，或 '/' 唤起指令…"
+    ? "基于引用内容输入指令，或 '/' 唤起对应快捷指令…"
     : "输入提示词开始对话，或 '/' 唤起指令…";
+
+  const availableActions = useMemo(
+    () => getActionsForSelection(selectionText, hasSelection),
+    [hasSelection, selectionText]
+  );
 
 
 
@@ -329,7 +334,7 @@ export function ChatInput({
 
 
 
-    const matchedAction = ACTION_PROMPTS.find((a) => a.slashCommand === trimmed);
+    const matchedAction = getActionBySlashCommand(trimmed, selectionText, hasSelection);
 
     if (matchedAction?.id === "fillForm") {
       if (!hasSelection) {
@@ -433,10 +438,8 @@ export function ChatInput({
 
 
 
-  const filteredActions = ACTION_PROMPTS.filter(
-
+  const filteredActions = availableActions.filter(
     (a) => input === "/" || a.slashCommand.startsWith(input)
-
   );
 
 
