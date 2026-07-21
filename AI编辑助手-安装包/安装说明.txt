@@ -1,7 +1,0 @@
-请打开 install-guide.txt 查看完整中文安装说明。
-
-快速步骤：
-1. 双击 安装.bat
-2. 看到 Done 后重启 Word
-3. 开始 -> AI编辑助手
-4. 设置里填 安装令牌.txt 和 API Key
