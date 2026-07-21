@@ -2,6 +2,7 @@ import React, { useEffect, useRef } from "react";
 import { UIMessage } from "../types";
 import { MessageBubble } from "./MessageBubble";
 import { ChatEmptyState } from "./ChatEmptyState";
+import { WelcomeView } from "./WelcomeView";
 import { ChatCloudBackground } from "./ChatCloudBackground";
 
 interface ChatConversationProps {
@@ -18,6 +19,7 @@ interface ChatConversationProps {
   onNotify?: (text: string) => void;
   onQuickAction: (actionId: string) => void;
   hasSelection: boolean;
+  onWelcomeCardClick?: (cardId: string) => void;
 }
 
 export function ChatConversation({
@@ -34,6 +36,7 @@ export function ChatConversation({
   onNotify,
   onQuickAction,
   hasSelection,
+  onWelcomeCardClick,
 }: ChatConversationProps) {
   const bottomRef = useRef<HTMLDivElement>(null);
 
@@ -45,7 +48,11 @@ export function ChatConversation({
     return (
       <div className="chat-conversation">
         <ChatCloudBackground />
-        <ChatEmptyState hasSelection={hasSelection} onQuickAction={onQuickAction} />
+        {onWelcomeCardClick ? (
+          <WelcomeView onCardClick={onWelcomeCardClick} />
+        ) : (
+          <ChatEmptyState hasSelection={hasSelection} onQuickAction={onQuickAction} />
+        )}
       </div>
     );
   }

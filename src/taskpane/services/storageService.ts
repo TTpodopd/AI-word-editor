@@ -154,6 +154,9 @@ function parseSettings(raw: string): AppSettings {
       ),
     },
     quickApplyEnabled: !!parsed.quickApplyEnabled,
+    customWritingTemplates: Array.isArray(parsed.customWritingTemplates)
+      ? parsed.customWritingTemplates
+      : [],
   };
 }
 
@@ -250,6 +253,9 @@ export function ensureSessionOrder(store: ChatSessionsStore): string[] {
 
 export function getSessionDisplayTitle(session: ChatSession): string {
   if (session.customTitle?.trim()) return session.customTitle.trim();
+  if (session.writingProject?.title?.trim() && session.writingProject.outline.length > 0) {
+    return session.writingProject.title.trim();
+  }
   return deriveSessionTitle(session.messages);
 }
 

@@ -1029,6 +1029,19 @@ export function useChat(
     [applyStore, flushCurrentSession, loading]
   );
 
+  const updateWritingProject = useCallback(
+    async (project: import("../types").WritingProject | null) => {
+      const current = sessionRef.current;
+      if (!current) return;
+      await persistSession({
+        ...current,
+        writingProject: project,
+        customTitle: project?.title?.trim() || current.customTitle,
+      });
+    },
+    [persistSession]
+  );
+
   const messages = session?.messages ?? [];
 
   return {
@@ -1039,6 +1052,7 @@ export function useChat(
     applyMode,
     editingMessageId,
     contextUsage,
+    writingProject: session?.writingProject ?? null,
     sendMessage,
     runAction,
     runDirectAction,
@@ -1055,6 +1069,7 @@ export function useChat(
     exportSessions,
     importSessions,
     newConversation,
+    updateWritingProject,
     hasMessages: messages.length > 0,
   };
 }

@@ -58,6 +58,7 @@ function sanitizeSession(session: Partial<ChatSession>): ChatSession | null {
     title: String(session.title || "导入的对话"),
     customTitle: session.customTitle ? String(session.customTitle) : undefined,
     messages,
+    writingProject: session.writingProject ?? undefined,
     createdAt,
     updatedAt,
   };

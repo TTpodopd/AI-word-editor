@@ -4,6 +4,8 @@ import { ChatInput } from "./components/ChatInput";
 import { SettingsPanel } from "./components/SettingsPanel";
 import { SettingsHeader } from "./components/SettingsHeader";
 import { SelectionBar } from "./components/SelectionBar";
+import { AppViewTabs } from "./components/AppViewTabs";
+import { WritingAssistantPanel } from "./components/WritingAssistantPanel";
 import { useSelection } from "./hooks/useSelection";
 import { useViewportScale } from "./hooks/useViewportScale";
 import { useChat } from "./hooks/useChat";
@@ -19,6 +21,7 @@ export function App() {
   const [view, setView] = useState<AppView>("chat");
   const [settings, setSettings] = useState<AppSettings>(DEFAULT_SETTINGS);
   const [toast, setToast] = useState("");
+  const [writingTemplateId, setWritingTemplateId] = useState<string | undefined>(undefined);
 
   const { selection } = useSelection();
   useViewportScale();
@@ -51,6 +54,8 @@ export function App() {
     importSessions,
     contextUsage,
     newConversation,
+    writingProject,
+    updateWritingProject,
   } = useChat(settings, { onNotify: showToast, hasSelection: selection.hasSelection });
 
   useEffect(() => {
@@ -67,7 +72,7 @@ export function App() {
   }, []);
 
   useEffect(() => {
-    if (view === "chat") {
+    if (view === "chat" || view === "writing") {
       applyThemeColor(settings.themeColorId);
     }
   }, [view, settings.themeColorId]);
@@ -265,6 +270,45 @@ export function App() {
     [importSessions, showToast]
   );
 
+  const handleWelcomeCardClick = useCallback(
+    (cardId: string) => {
+      if (cardId === "generate") {
+        setWritingTemplateId("work-plan");
+        setView("writing");
+        showToast("已进入写作助手，请填写主题并生成大纲");
+        return;
+      }
+
+      if (cardId === "adjust") {
+        if (selection.hasSelection) {
+          showToast("已检测到选区，可使用顶部快捷按钮或 /润色 等指令");
+        } else {
+          showToast("请先在 Word 中选中文本，再使用润色、精简等操作");
+        }
+        return;
+      }
+
+      if (cardId === "read") {
+        setWritingTemplateId("report");
+        setView("writing");
+        showToast("已进入写作助手，可使用「从 Word 文档续写」分析结构");
+      }
+    },
+    [selection.hasSelection, showToast]
+  );
+
+  const handleWritingProjectChange = useCallback(
+    async (project: import("./types").WritingProject | null) => {
+      await updateWritingProject(project);
+    },
+    [updateWritingProject]
+  );
+
+  const handleSettingsChange = useCallback(async (nextSettings: AppSettings) => {
+    setSettings(nextSettings);
+    await saveSettings(nextSettings);
+  }, []);
+
   return (
     <div className="app-container chat-layout">
       {view === "settings" ? (
@@ -281,62 +325,97 @@ export function App() {
         </>
       ) : (
         <>
-          <div className="chat-main">
-            {selection.hasSelection && (
-              <div className="selection-strip">
-                <SelectionBar
-                  text={selection.text}
-                  charCount={selection.charCount}
-                  onAction={handleQuickAction}
-                  loading={loading}
-                  compact
-                />
-              </div>
-            )}
-
-            <ChatConversation
-              messages={messages}
-              loading={loading}
-              editingMessageId={editingMessageId}
-              onApply={handleApply}
-              onRegenerate={regenerateMessage}
-              onStartEdit={startEditMessage}
-              onCancelEdit={cancelEditMessage}
-              onEditResend={handleEditResend}
-              onDelete={handleDeleteMessage}
-              onStop={stopGeneration}
-              onNotify={showToast}
-              onQuickAction={handleQuickAction}
-              hasSelection={selection.hasSelection}
-            />
+          <div className="chat-view-header">
+            <AppViewTabs view={view} disabled={loading} onChange={setView} />
           </div>
 
-          {toast && <div className="chat-toast">{toast}</div>}
+          {view === "writing" ? (
+            <main className="writing-main">
+              <WritingAssistantPanel
+                settings={settings}
+                project={writingProject}
+                disabled={loading}
+                initialTemplateId={writingTemplateId}
+                onProjectChange={handleWritingProjectChange}
+                onSettingsChange={handleSettingsChange}
+                onNotify={showToast}
+              />
+            </main>
+          ) : (
+            <>
+              <div className="chat-main">
+                {selection.hasSelection && (
+                  <div className="selection-strip">
+                    <SelectionBar
+                      text={selection.text}
+                      charCount={selection.charCount}
+                      onAction={handleQuickAction}
+                      loading={loading}
+                      compact
+                    />
+                  </div>
+                )}
 
-          <ChatInput
-            settings={settings}
-            hasSelection={selection.hasSelection}
-            selectionText={selection.text}
-            selectionCharCount={selection.charCount}
-            disabled={loading}
-            sessions={sessions}
-            activeSessionId={activeSessionId}
-            onModelChange={handleModelChange}
-            onSend={handleSend}
-            onSlashAction={handleSlashAction}
-            onNewChat={handleNewChat}
-            onOpenSettings={() => setView("settings")}
-            onToggleWebSearch={handleToggleWebSearch}
-            onSwitchSession={switchSession}
-            onRenameSession={renameSession}
-            onReorderSessions={reorderSessions}
-            onDeleteSession={deleteSession}
-            onExportSessions={handleExportSessions}
-            onImportSessions={handleImportSessions}
-            contextUsage={contextUsage}
-            onError={showToast}
-            onNotify={showToast}
-          />
+                <ChatConversation
+                  messages={messages}
+                  loading={loading}
+                  editingMessageId={editingMessageId}
+                  onApply={handleApply}
+                  onRegenerate={regenerateMessage}
+                  onStartEdit={startEditMessage}
+                  onCancelEdit={cancelEditMessage}
+                  onEditResend={handleEditResend}
+                  onDelete={handleDeleteMessage}
+                  onStop={stopGeneration}
+                  onNotify={showToast}
+                  onQuickAction={handleQuickAction}
+                  hasSelection={selection.hasSelection}
+                  onWelcomeCardClick={handleWelcomeCardClick}
+                />
+              </div>
+
+              {toast && <div className="chat-toast">{toast}</div>}
+
+              <ChatInput
+                settings={settings}
+                hasSelection={selection.hasSelection}
+                selectionText={selection.text}
+                selectionCharCount={selection.charCount}
+                disabled={loading}
+                sessions={sessions}
+                activeSessionId={activeSessionId}
+                onModelChange={handleModelChange}
+                onSend={handleSend}
+                onSlashAction={handleSlashAction}
+                onNewChat={handleNewChat}
+                onOpenSettings={() => setView("settings")}
+                onToggleWebSearch={handleToggleWebSearch}
+                onSwitchSession={switchSession}
+                onRenameSession={renameSession}
+                onReorderSessions={reorderSessions}
+                onDeleteSession={deleteSession}
+                onExportSessions={handleExportSessions}
+                onImportSessions={handleImportSessions}
+                contextUsage={contextUsage}
+                onError={showToast}
+                onNotify={showToast}
+              />
+            </>
+          )}
+
+          {view === "writing" && toast && <div className="chat-toast">{toast}</div>}
+
+          {view === "writing" && (
+            <div className="writing-bottom-bar">
+              <button type="button" className="icon-btn" title="设置" onClick={() => setView("settings")}>
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+                  <circle cx="8" cy="3" r="1.2" />
+                  <circle cx="8" cy="8" r="1.2" />
+                  <circle cx="8" cy="13" r="1.2" />
+                </svg>
+              </button>
+            </div>
+          )}
         </>
       )}
     </div>

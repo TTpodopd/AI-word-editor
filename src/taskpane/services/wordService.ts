@@ -1,6 +1,7 @@
 /* global Word */
 
 import { convertLatexToOoxml } from "./latexService";
+import type { DocumentHeading } from "../types";
 
 let trackedRange: Word.Range | null = null;
 let trackedCursor: Word.Range | null = null;
@@ -235,6 +236,132 @@ export function clearTrackedRange(): void {
 
 export function hasTrackedRange(): boolean {
   return trackedRange !== null || trackedCursor !== null;
+}
+
+const HEADING_STYLE_MAP: Record<1 | 2 | 3, Word.BuiltInStyleName> = {
+  1: Word.BuiltInStyleName.heading1,
+  2: Word.BuiltInStyleName.heading2,
+  3: Word.BuiltInStyleName.heading3,
+};
+
+function getHeadingStyle(level: 1 | 2 | 3): Word.BuiltInStyleName {
+  return HEADING_STYLE_MAP[level];
+}
+
+export interface InsertSectionOptions extends ApplyTextOptions {
+  addBlankLine?: boolean;
+}
+
+export async function insertSectionWithHeading(
+  title: string,
+  body: string,
+  level: 1 | 2 | 3,
+  options?: InsertSectionOptions
+): Promise<{ success: boolean; error?: string }> {
+  const trimmedTitle = title.trim();
+  const trimmedBody = body.trim();
+  if (!trimmedTitle && !trimmedBody) {
+    return { success: false, error: "章节内容为空" };
+  }
+
+  const insertAtRange = async (
+    context: Word.RequestContext,
+    targetRange: Word.Range
+  ): Promise<{ success: boolean; error?: string }> => {
+    let cursor = targetRange;
+
+    if (trimmedTitle) {
+      const titleInserted = cursor.insertText(`${trimmedTitle}\n`, Word.InsertLocation.end);
+      titleInserted.paragraphs.load("items");
+      await context.sync();
+      if (titleInserted.paragraphs.items.length > 0) {
+        titleInserted.paragraphs.items[0].styleBuiltIn = getHeadingStyle(level);
+      }
+      cursor = titleInserted.getRange(Word.RangeLocation.end);
+    }
+
+    if (trimmedBody) {
+      const prefix = options?.addBlankLine === false ? "" : trimmedTitle ? "\n" : "";
+      const bodyInserted = cursor.insertText(`${prefix}${trimmedBody}\n`, Word.InsertLocation.end);
+      const indentChars = options?.firstLineIndentChars ?? 0;
+      if (indentChars > 0) {
+        await applyFirstLineIndent(context, bodyInserted, indentChars);
+      } else {
+        await context.sync();
+      }
+    } else {
+      await context.sync();
+    }
+
+    return { success: true };
+  };
+
+  if (trackedCursor) {
+    try {
+      return await Word.run(trackedCursor, async (context) => {
+        if (trackedCursor!.isNullObject) {
+          return { success: false, error: "光标位置已失效，请重新点击文档中的插入位置" };
+        }
+        const result = await insertAtRange(context, trackedCursor!);
+        context.trackedObjects.remove(trackedCursor!);
+        trackedCursor = null;
+        return result;
+      });
+    } catch (err) {
+      return { success: false, error: err instanceof Error ? err.message : "写入章节失败" };
+    }
+  }
+
+  try {
+    return await Word.run(async (context) => {
+      const range = context.document.getSelection();
+      return insertAtRange(context, range);
+    });
+  } catch (err) {
+    return { success: false, error: err instanceof Error ? err.message : "写入章节失败" };
+  }
+}
+
+export async function readDocumentHeadings(): Promise<{
+  headings: DocumentHeading[];
+  success: boolean;
+  error?: string;
+}> {
+  try {
+    return await Word.run(async (context) => {
+      const paragraphs = context.document.body.paragraphs;
+      paragraphs.load("items");
+      await context.sync();
+
+      for (const paragraph of paragraphs.items) {
+        paragraph.load("text,styleBuiltIn");
+      }
+      await context.sync();
+
+      const headings: DocumentHeading[] = [];
+      for (const paragraph of paragraphs.items) {
+        const text = paragraph.text?.replace(/\r/g, "").trim() ?? "";
+        if (!text) continue;
+
+        let level: 1 | 2 | 3 | null = null;
+        if (paragraph.styleBuiltIn === Word.BuiltInStyleName.heading1) level = 1;
+        else if (paragraph.styleBuiltIn === Word.BuiltInStyleName.heading2) level = 2;
+        else if (paragraph.styleBuiltIn === Word.BuiltInStyleName.heading3) level = 3;
+
+        if (level) {
+          headings.push({ title: text, level });
+        }
+      }
+
+      return { headings, success: true };
+    });
+  } catch (err) {
+    return {
+      headings: [],
+      success: false,
+      error: err instanceof Error ? err.message : "读取文档标题失败",
+    };
+  }
 }
 
 const MAX_ATTACHMENT_CHARS = 120000;

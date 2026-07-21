@@ -5,7 +5,54 @@ export type LLMProvider = "deepseek" | "openai" | "qwen" | "custom";
 
 export type ActionType = "summarize" | "simplify" | "expand" | "polish" | "proofread" | "translate" | "fillForm" | "custom";
 
-export type AppView = "chat" | "settings";
+export type AppView = "chat" | "writing" | "settings";
+
+export type WritingProjectStatus = "setup" | "outline" | "writing" | "review" | "done";
+
+export type WritingSectionStatus = "pending" | "generating" | "done";
+
+export interface WritingOutlineSection {
+  id: string;
+  level: 1 | 2 | 3;
+  title: string;
+  brief: string;
+  content?: string;
+  status?: WritingSectionStatus;
+}
+
+export interface WritingTemplateSkeleton {
+  level: 1 | 2 | 3;
+  title: string;
+  brief: string;
+}
+
+export interface WritingTemplate {
+  id: string;
+  name: string;
+  description: string;
+  builtin?: boolean;
+  outlineSkeleton: WritingTemplateSkeleton[];
+  systemPrompt: string;
+  sectionRules: string;
+}
+
+export interface WritingProject {
+  templateId: string;
+  topic: string;
+  title: string;
+  outline: WritingOutlineSection[];
+  currentSectionId: string | null;
+  status: WritingProjectStatus;
+  autoNextSection: boolean;
+  importedFromDocument?: boolean;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface DocumentHeading {
+  title: string;
+  level: 1 | 2 | 3;
+}
 
 export interface ModelConfig {
   id: string;
@@ -111,6 +158,7 @@ export interface ChatSession {
   title: string;
   customTitle?: string;
   messages: UIMessage[];
+  writingProject?: WritingProject | null;
   createdAt: number;
   updatedAt: number;
 }
@@ -153,6 +201,7 @@ export interface AppSettings {
   themeColorId: ThemeColorId;
   webSearch: WebSearchSettings;
   quickApplyEnabled?: boolean;
+  customWritingTemplates?: WritingTemplate[];
 }
 
 export const BUILTIN_MODEL_OPTIONS: ModelConfig[] = [
@@ -191,6 +240,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   themeColorId: DEFAULT_THEME_COLOR_ID,
   webSearch: { ...DEFAULT_WEB_SEARCH },
   quickApplyEnabled: false,
+  customWritingTemplates: [],
 };
 
 export const SYSTEM_PROMPT_WITH_SELECTION = DEFAULT_SYSTEM_PROMPTS.withSelection;
