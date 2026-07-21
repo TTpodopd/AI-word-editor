@@ -1,6 +1,7 @@
 /* global Word */
 
 import { convertLatexToOoxml } from "./latexService";
+import { localizeErrorMessage } from "../utils/localizeErrorMessage";
 import type { DocumentHeading } from "../types";
 
 let trackedRange: Word.Range | null = null;
@@ -140,7 +141,7 @@ export async function applyText(
         return { success: true };
       });
     } catch (err) {
-      return { success: false, error: err instanceof Error ? err.message : "写入文档失败" };
+      return { success: false, error: localizeErrorMessage(err, "写入文档失败") };
     }
   }
 
@@ -158,7 +159,7 @@ export async function applyText(
         return { success: true };
       });
     } catch (err) {
-      return { success: false, error: err instanceof Error ? err.message : "写入文档失败" };
+      return { success: false, error: localizeErrorMessage(err, "写入文档失败") };
     }
   }
 
@@ -169,7 +170,7 @@ export async function applyText(
       return { success: true };
     });
   } catch (err) {
-    return { success: false, error: err instanceof Error ? err.message : "写入文档失败" };
+    return { success: false, error: localizeErrorMessage(err, "写入文档失败") };
   }
 }
 
@@ -200,7 +201,7 @@ export async function insertOoxmlAtCursor(
         return { success: true };
       });
     } catch (err) {
-      return { success: false, error: err instanceof Error ? err.message : "插入公式失败" };
+      return { success: false, error: localizeErrorMessage(err, "插入公式失败") };
     }
   }
 
@@ -212,7 +213,7 @@ export async function insertOoxmlAtCursor(
       return { success: true };
     });
   } catch (err) {
-    return { success: false, error: err instanceof Error ? err.message : "插入公式失败" };
+    return { success: false, error: localizeErrorMessage(err, "插入公式失败") };
   }
 }
 
@@ -308,7 +309,7 @@ export async function insertSectionWithHeading(
         return result;
       });
     } catch (err) {
-      return { success: false, error: err instanceof Error ? err.message : "写入章节失败" };
+      return { success: false, error: localizeErrorMessage(err, "写入章节失败") };
     }
   }
 
@@ -318,7 +319,7 @@ export async function insertSectionWithHeading(
       return insertAtRange(context, range);
     });
   } catch (err) {
-    return { success: false, error: err instanceof Error ? err.message : "写入章节失败" };
+    return { success: false, error: localizeErrorMessage(err, "写入章节失败") };
   }
 }
 
@@ -359,7 +360,7 @@ export async function readDocumentHeadings(): Promise<{
     return {
       headings: [],
       success: false,
-      error: err instanceof Error ? err.message : "读取文档标题失败",
+      error: localizeErrorMessage(err, "读取文档标题失败"),
     };
   }
 }
@@ -403,7 +404,7 @@ export async function readDocumentTextForAttachment(): Promise<{
       text: "",
       success: false,
       sourceName: "Word 文档",
-      error: err instanceof Error ? err.message : "读取文档失败",
+      error: localizeErrorMessage(err, "读取文档失败"),
     };
   }
 }

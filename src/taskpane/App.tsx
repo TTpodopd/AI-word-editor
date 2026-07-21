@@ -5,6 +5,7 @@ import { SettingsPanel } from "./components/SettingsPanel";
 import { SettingsHeader } from "./components/SettingsHeader";
 import { SelectionBar } from "./components/SelectionBar";
 import { AppViewTabs } from "./components/AppViewTabs";
+import { DocumentToolsPanel } from "./components/DocumentToolsPanel";
 import { WritingAssistantPanel } from "./components/WritingAssistantPanel";
 import { useSelection } from "./hooks/useSelection";
 import { useViewportScale } from "./hooks/useViewportScale";
@@ -16,6 +17,7 @@ import { applyText, captureCursor, captureSelection, clearTrackedRange, hasTrack
 import { applyFormFillContent, clearFormFillScope, resolveFormFillData } from "./services/formFillService";
 import { getInsertFirstLineIndentChars, prepareTextForWordDocument } from "./utils/textFormat";
 import { applyThemeColor } from "./utils/theme";
+import { localizeErrorMessage } from "./utils/localizeErrorMessage";
 
 export function App() {
   const [view, setView] = useState<AppView>("chat");
@@ -72,7 +74,7 @@ export function App() {
   }, []);
 
   useEffect(() => {
-    if (view === "chat" || view === "writing") {
+    if (view === "chat" || view === "writing" || view === "tools") {
       applyThemeColor(settings.themeColorId);
     }
   }, [view, settings.themeColorId]);
@@ -233,7 +235,7 @@ export function App() {
       setView("chat");
       showToast("设置已保存");
     } catch (err) {
-      showToast(err instanceof Error ? err.message : "设置保存失败");
+      showToast(localizeErrorMessage(err, "设置保存失败"));
     }
   }, []);
 
@@ -341,6 +343,14 @@ export function App() {
                 onNotify={showToast}
               />
             </main>
+          ) : view === "tools" ? (
+            <main className="writing-main document-tools-main">
+              <DocumentToolsPanel
+                hasSelection={selection.hasSelection}
+                disabled={loading}
+                onNotify={showToast}
+              />
+            </main>
           ) : (
             <>
               <div className="chat-main">
@@ -403,9 +413,9 @@ export function App() {
             </>
           )}
 
-          {view === "writing" && toast && <div className="chat-toast">{toast}</div>}
+          {(view === "writing" || view === "tools") && toast && <div className="chat-toast">{toast}</div>}
 
-          {view === "writing" && (
+          {(view === "writing" || view === "tools") && (
             <div className="writing-bottom-bar">
               <button type="button" className="icon-btn" title="设置" onClick={() => setView("settings")}>
                 <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">

@@ -26,6 +26,14 @@ export function AppViewTabs({ view, disabled, onChange }: AppViewTabsProps) {
       >
         写作
       </button>
+      <button
+        type="button"
+        className={`app-view-tab${view === "tools" ? " active" : ""}`}
+        disabled={disabled}
+        onClick={() => onChange("tools")}
+      >
+        工具
+      </button>
     </div>
   );
 }

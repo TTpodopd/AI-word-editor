@@ -5,7 +5,7 @@ export type LLMProvider = "deepseek" | "openai" | "qwen" | "custom";
 
 export type ActionType = "summarize" | "simplify" | "expand" | "polish" | "proofread" | "translate" | "fillForm" | "custom";
 
-export type AppView = "chat" | "writing" | "settings";
+export type AppView = "chat" | "writing" | "tools" | "settings";
 
 export type WritingProjectStatus = "setup" | "outline" | "writing" | "review" | "done";
 
