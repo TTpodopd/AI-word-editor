@@ -34,7 +34,6 @@ function sanitizeMessage(message: Partial<UIMessage>): UIMessage | null {
     timestamp: Number(message.timestamp) || Date.now(),
     attachments: Array.isArray(message.attachments) ? message.attachments : undefined,
     applyMode: message.applyMode,
-    formFill: message.formFill,
     sourceText: message.sourceText,
     actionLabel: message.actionLabel,
     actionId: message.actionId,

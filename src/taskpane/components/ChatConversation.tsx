@@ -9,7 +9,7 @@ interface ChatConversationProps {
   messages: UIMessage[];
   loading: boolean;
   editingMessageId: string | null;
-  onApply: (content: string, applyMode: "replace" | "insert", formFill?: boolean, referenceText?: string) => void;
+  onApply: (content: string, applyMode: "replace" | "insert", referenceText?: string) => void;
   onRegenerate: (messageId: string) => void;
   onStartEdit: (messageId: string) => void;
   onCancelEdit: () => void;

@@ -1,7 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { prepareTextForWordDocument } from "../utils/textFormat";
 import { openExternalLink } from "../utils/openExternalLink";
-import { formatFormFillPreview, resolveFormFillData, shouldTreatAsFormFill } from "../services/formFillService";
 import { UIMessage, MessageSearchInfo } from "../types";
 import { TextDiffPreview } from "./TextDiffPreview";
 
@@ -9,7 +8,7 @@ interface MessageBubbleProps {
   message: UIMessage;
   editing: boolean;
   disabled: boolean;
-  onApply: (content: string, applyMode: "replace" | "insert", formFill?: boolean, referenceText?: string) => void;
+  onApply: (content: string, applyMode: "replace" | "insert", referenceText?: string) => void;
   onRegenerate: (messageId: string) => void;
   onStartEdit: (messageId: string) => void;
   onCancelEdit: () => void;
@@ -341,18 +340,10 @@ export function MessageBubble({
     );
   }
 
-  const isFormFillMessage = shouldTreatAsFormFill(message);
-  const formData = isFormFillMessage ? resolveFormFillData(message.content) : null;
-  const revisedContent = formData
-    ? formatFormFillPreview(formData)
-    : prepareTextForWordDocument(message.content, message.sourceText || "");
-  const hasReplacePreview = !!message.sourceText && !isFormFillMessage;
+  const revisedContent = prepareTextForWordDocument(message.content, message.sourceText || "");
+  const hasReplacePreview = !!message.sourceText;
   const applyMode = message.applyMode ?? "insert";
-  const applyLabel = isFormFillMessage
-    ? "填充到文档"
-    : applyMode === "replace"
-      ? "确定替换"
-      : "插入到文档";
+  const applyLabel = applyMode === "replace" ? "确定替换" : "插入到文档";
   const copyContent = revisedContent;
 
   return (
@@ -376,7 +367,7 @@ export function MessageBubble({
         <div className="message-actions">
           <button
             className="msg-action-btn primary"
-            onClick={() => onApply(message.content, applyMode, isFormFillMessage, message.sourceText)}
+            onClick={() => onApply(message.content, applyMode, message.sourceText)}
             disabled={disabled}
           >
             {applyLabel}

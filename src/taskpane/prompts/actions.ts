@@ -69,14 +69,6 @@ export const ACTION_PROMPTS: ActionPrompt[] = [
     userPromptTemplate: (text) => `请翻译以下文本：\n\n${text}`,
   },
   {
-    id: "fillForm",
-    label: "填表",
-    slashCommand: "/填表",
-    contentKinds: ["text"],
-    systemPrompt: "",
-    userPromptTemplate: (text) => text,
-  },
-  {
     id: "explainCode",
     label: "解释",
     slashCommand: "/解释",

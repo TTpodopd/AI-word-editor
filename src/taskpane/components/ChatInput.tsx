@@ -7,7 +7,6 @@ import { ContextUsageIndicator } from "./ContextUsageIndicator";
 import { getVisibleModels, resolveModel } from "../services/modelService";
 
 import { ACTION_PROMPTS, getActionBySlashCommand, getActionsForSelection } from "../prompts/actions";
-import { FORM_FILL_SLASH_COMMAND } from "../prompts/formFill";
 
 import { ChatBottomActions } from "./ChatBottomActions";
 
@@ -336,27 +335,13 @@ export function ChatInput({
 
     const matchedAction = getActionBySlashCommand(trimmed, selectionText, hasSelection);
 
-    if (matchedAction?.id === "fillForm") {
-      if (!hasSelection) {
-        notifyError("请先在文档中选中需要填写的表单区域");
-        return;
-      }
-      const error = await onSend(trimmed, attachments);
-      if (error) notifyError(error);
-    } else if (matchedAction) {
-
+    if (matchedAction) {
       if (hasSelection) {
-
         onSlashAction(matchedAction.id);
-
       } else {
-
         const error = await onSend(`请${matchedAction.label}一段适合放入 Word 文档的内容`, attachments);
-
         if (error) notifyError(error);
-
       }
-
     } else {
 
       const error = await onSend(trimmed, attachments);
@@ -403,24 +388,8 @@ export function ChatInput({
 
 
   const handleSlashSelect = (actionId: string) => {
-    if (actionId === "fillForm") {
-      if (!hasSelection) {
-        notifyError("请先在文档中选中需要填写的表单区域");
-        return;
-      }
-      const prefix = `${FORM_FILL_SLASH_COMMAND} `;
-      setInput(prefix);
-      if (textareaRef.current) {
-        textareaRef.current.value = prefix;
-        textareaRef.current.focus();
-      }
-      return;
-    }
-
     if (hasSelection) {
-
       onSlashAction(actionId);
-
     } else {
 
       const action = ACTION_PROMPTS.find((a) => a.id === actionId);

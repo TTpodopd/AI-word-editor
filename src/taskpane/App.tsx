@@ -14,7 +14,6 @@ import { ActionType, AppSettings, AppView, DEFAULT_SETTINGS, PendingAttachment }
 import { ensureOfficeReady, loadSettings, saveSettings, saveSelectedModel, saveWebSearchEnabled } from "./services/storageService";
 import { ensureSelectedModelVisible } from "./services/modelService";
 import { applyText, captureCursor, captureSelection, clearTrackedRange, hasTrackedRange, readCurrentSelection } from "./services/wordService";
-import { applyFormFillContent, clearFormFillScope, resolveFormFillData } from "./services/formFillService";
 import { getInsertFirstLineIndentChars, prepareTextForWordDocument } from "./utils/textFormat";
 import { applyThemeColor } from "./utils/theme";
 import { localizeErrorMessage } from "./utils/localizeErrorMessage";
@@ -95,7 +94,7 @@ export function App() {
 
   const handleSlashAction = useCallback(
     async (actionId: string) => {
-      if (settings.quickApplyEnabled && actionId !== "fillForm") {
+      if (settings.quickApplyEnabled) {
         const error = await runDirectAction(
           actionId as ActionType,
           selection.hasSelection ? selection.text : undefined
@@ -112,12 +111,6 @@ export function App() {
 
   const handleQuickAction = useCallback(
     async (actionId: string) => {
-      if (actionId === "fillForm") {
-        const error = await sendMessage("/填表", selection.hasSelection ? selection.text : undefined);
-        if (error) showToast(error);
-        return;
-      }
-
       if (settings.quickApplyEnabled) {
         const error = await runDirectAction(
           actionId as ActionType,
@@ -130,39 +123,11 @@ export function App() {
 
       runAction(actionId as ActionType, selection.hasSelection ? selection.text : undefined);
     },
-    [runAction, runDirectAction, sendMessage, selection.hasSelection, selection.text, settings.quickApplyEnabled]
+    [runAction, runDirectAction, selection.hasSelection, selection.text, settings.quickApplyEnabled]
   );
 
   const handleApply = useCallback(
-    async (
-      content: string,
-      mode: "replace" | "insert",
-      formFill?: boolean,
-      referenceText?: string
-    ) => {
-      if (formFill) {
-        const result = await applyFormFillContent(content);
-        if (result.success) {
-          showToast(`已在选中区域填充 ${result.filledCount} 个字段`);
-        } else {
-          showToast(result.error || "填充失败");
-        }
-        return;
-      }
-
-      const skipFormFill =
-        !!referenceText?.trim() && detectSelectionContentKind(referenceText) === "code";
-      const formData = skipFormFill ? null : resolveFormFillData(content);
-      if (formData) {
-        const result = await applyFormFillContent(content);
-        if (result.success) {
-          showToast(`已在选中区域填充 ${result.filledCount} 个字段`);
-        } else {
-          showToast(result.error || "填充失败");
-        }
-        return;
-      }
-
+    async (content: string, mode: "replace" | "insert", referenceText?: string) => {
       const latestSettings = await loadSettings();
       let refText = referenceText?.trim() || "";
       if (!refText) {
@@ -259,7 +224,6 @@ export function App() {
   const handleNewChat = useCallback(async () => {
     await newConversation();
     clearTrackedRange();
-    clearFormFillScope();
   }, [newConversation]);
 
   const handleExportSessions = useCallback(async () => {

@@ -25,12 +25,6 @@ import {
   toUiAttachments,
 } from "../services/multimodalService";
 import {
-  buildFormFillMessages,
-  extractFormFillInstruction,
-  FORM_FILL_SLASH_COMMAND,
-  isFormFillCommand,
-} from "../prompts/formFill";
-import {
   computeContextUsageStats,
   createEmptyContextUsage,
   formatHistoryTrimNotice,
@@ -41,13 +35,6 @@ import {
   exportAllSessionsToFile,
   importSessionsFromFile,
 } from "../services/sessionTransferService";
-import {
-  captureFormFillScope,
-  clearFormFillScope,
-  filterFormFillData,
-  resolveFormFillData,
-  scanFormFields,
-} from "../services/formFillService";
 
 function createId(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -65,18 +52,6 @@ function buildApiMessages(
   }));
 
   return [{ role: "system", content: system }, ...history];
-}
-
-function buildAttachmentInstruction(attachments: PendingAttachment[]): string {
-  return attachments
-    .filter((item) => item.kind === "document" && item.textContent?.trim())
-    .map((item) => `【附件：${item.name}】\n${item.textContent!.trim()}`)
-    .join("\n\n");
-}
-
-function buildFormFillInstruction(content: string, attachments: PendingAttachment[]): string {
-  const parts = [extractFormFillInstruction(content), buildAttachmentInstruction(attachments)].filter(Boolean);
-  return parts.join("\n\n");
 }
 
 function buildSearchInfo(
@@ -387,7 +362,6 @@ export function useChat(
         applyMode?: ApplyMode;
         sourceText?: string;
         actionLabel?: string;
-        formFill?: boolean;
         searchInfo?: MessageSearchInfo;
       } = {}
     ) => {
@@ -436,7 +410,6 @@ export function useChat(
         applyMode: meta.applyMode ?? "insert",
         sourceText: meta.sourceText,
         actionLabel: meta.actionLabel,
-        formFill: meta.formFill,
         searchInfo: meta.searchInfo,
       });
     },
@@ -529,83 +502,6 @@ export function useChat(
     [getCurrentModel, getLatestSettings, patchMessageLocal, startGeneration, streamAssistantResponse, syncContextUsageFromApiMessages, updateMessage]
   );
 
-  const requestFormFillAssistant = useCallback(
-    async (
-      assistantId: string,
-      userInstruction: string,
-      pendingAttachments: PendingAttachment[] = []
-    ) => {
-      const model = getCurrentModel();
-      if (!model) {
-        await updateMessage(assistantId, {
-          status: "error",
-          error: "请先在设置中选择并配置模型",
-          content: "",
-        });
-        return;
-      }
-
-      try {
-        startGeneration(assistantId);
-        const signal = abortControllerRef.current?.signal;
-        if (!signal || generationStoppedRef.current) return;
-
-        const scanResult = await scanFormFields();
-        if (scanResult.fieldLabels.length === 0 && !scanResult.hasPersonnelTable && !scanResult.hasOptionChecks) {
-          await updateMessage(assistantId, {
-            status: "error",
-            error: "选中区域内未检测到可填写的表单字段或方框选项，请扩大选中范围后重试",
-            content: "",
-          });
-          return;
-        }
-
-        const instructionParts = [userInstruction, buildAttachmentInstruction(pendingAttachments)]
-          .filter(Boolean)
-          .join("\n\n");
-
-        const latestSettings = await getLatestSettings();
-        const apiMessages = buildFormFillMessages(latestSettings, scanResult, instructionParts);
-        const response = await sendChatWithModel(model, apiMessages, undefined, signal);
-
-        if (generationStoppedRef.current) return;
-
-        if (response.error) {
-          await updateMessage(assistantId, {
-            status: "error",
-            error: response.error,
-            content: "",
-          });
-          return;
-        }
-
-        const rawContent = normalizeAssistantContent(response.content);
-        const resolved = resolveFormFillData(rawContent);
-        const filtered = resolved ? filterFormFillData(resolved, scanResult) : null;
-        const content = filtered ? JSON.stringify(filtered, null, 2) : rawContent;
-
-        await updateMessage(assistantId, {
-          status: "done",
-          content,
-          applyMode: "insert",
-          formFill: true,
-        });
-      } catch (err) {
-        if (generationStoppedRef.current) return;
-        await updateMessage(assistantId, {
-          status: "error",
-          error: err instanceof Error ? err.message : "填表请求失败",
-          content: "",
-        });
-      } finally {
-        if (!generationStoppedRef.current) {
-          endGeneration();
-        }
-      }
-    },
-    [endGeneration, getCurrentModel, getLatestSettings, startGeneration, updateMessage]
-  );
-
   const sendMessage = useCallback(
     async (content: string, selectedText?: string, attachments: PendingAttachment[] = []) => {
       const trimmed = content.trim();
@@ -617,26 +513,10 @@ export function useChat(
       }
 
       setLoading(true);
-      const isFormFill = isFormFillCommand(trimmed);
-      let text = "";
-      let mode: ApplyMode = "insert";
-
-      if (isFormFill) {
-        const scope = await captureFormFillScope();
-        if (!scope.success) {
-          setLoading(false);
-          return scope.error || "请先在文档中选中需要填写的表单区域";
-        }
-        text = scope.text;
-      } else {
-        const contextResult = await prepareContext(selectedText);
-        text = contextResult.text;
-        mode = contextResult.applyMode;
-      }
-
-      const displayContent = isFormFill
-        ? trimmed || FORM_FILL_SLASH_COMMAND
-        : buildDisplayContent(trimmed, attachments);
+      const contextResult = await prepareContext(selectedText);
+      const text = contextResult.text;
+      const mode = contextResult.applyMode;
+      const displayContent = buildDisplayContent(trimmed, attachments);
 
       const userMessage: UIMessage = {
         id: createId(),
@@ -660,26 +540,18 @@ export function useChat(
       const nextMessages = [...current.messages, userMessage, assistantMessage];
       await persistSession({ ...current, messages: nextMessages });
 
-      if (isFormFill) {
-        await requestFormFillAssistant(
-          assistantMessage.id,
-          buildFormFillInstruction(trimmed, attachments),
-          attachments
-        );
-      } else {
-        await requestAssistant(
-          assistantMessage.id,
-          displayContent,
-          text,
-          nextMessages,
-          attachments
-        );
-      }
+      await requestAssistant(
+        assistantMessage.id,
+        displayContent,
+        text,
+        nextMessages,
+        attachments
+      );
 
       setLoading(false);
       return null;
     },
-    [getCurrentModel, loading, persistSession, prepareContext, requestAssistant, requestFormFillAssistant]
+    [getCurrentModel, loading, persistSession, prepareContext, requestAssistant]
   );
 
   const runDirectAction = useCallback(
@@ -998,7 +870,6 @@ export function useChat(
     setEditingMessageId(null);
     setApplyMode("insert");
     clearTrackedRange();
-    clearFormFillScope();
 
     sessionRef.current = fresh;
     setSession(fresh);

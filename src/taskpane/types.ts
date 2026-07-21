@@ -10,7 +10,6 @@ export type ActionType =
   | "polish"
   | "proofread"
   | "translate"
-  | "fillForm"
   | "explainCode"
   | "expandCode"
   | "simplifyCode"
@@ -158,7 +157,6 @@ export interface UIMessage {
   timestamp: number;
   attachments?: MessageAttachment[];
   applyMode?: "replace" | "insert";
-  formFill?: boolean;
   sourceText?: string;
   actionLabel?: string;
   actionId?: ActionType;
