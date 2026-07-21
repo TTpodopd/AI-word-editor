@@ -16,6 +16,8 @@ interface SessionSwitcherProps {
   onRename?: (sessionId: string, title: string) => void;
   onReorder?: (orderedIds: string[]) => void;
   onDelete: (sessionId: string) => void;
+  onExportSessions?: () => void | Promise<void>;
+  onImportSessions?: (file: File) => void | Promise<string | null>;
 }
 
 export function SessionSwitcher({
@@ -27,6 +29,8 @@ export function SessionSwitcher({
   onRename = () => undefined,
   onReorder = () => undefined,
   onDelete,
+  onExportSessions,
+  onImportSessions,
 }: SessionSwitcherProps) {
   const [open, setOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -34,9 +38,11 @@ export function SessionSwitcher({
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [dragOverId, setDragOverId] = useState<string | null>(null);
   const [dropdownStyle, setDropdownStyle] = useState<React.CSSProperties>({});
+  const [importing, setImporting] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const editInputRef = useRef<HTMLInputElement>(null);
+  const importInputRef = useRef<HTMLInputElement>(null);
   const draggingRef = useRef<string | null>(null);
   const sessionsRef = useRef(sessions);
 
@@ -150,6 +156,31 @@ export function SessionSwitcher({
   const handleDelete = (event: React.MouseEvent, sessionId: string) => {
     event.stopPropagation();
     onDelete(sessionId);
+  };
+
+  const handleExport = async () => {
+    if (!onExportSessions || disabled || importing) return;
+    await onExportSessions();
+    setOpen(false);
+  };
+
+  const handleImportClick = () => {
+    if (!onImportSessions || disabled || importing) return;
+    importInputRef.current?.click();
+  };
+
+  const handleImportSelected = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file || !onImportSessions) return;
+
+    setImporting(true);
+    try {
+      await onImportSessions(file);
+      setOpen(false);
+    } finally {
+      setImporting(false);
+    }
   };
 
   const commitReorder = useCallback(
@@ -372,6 +403,37 @@ export function SessionSwitcher({
                 );
               })}
             </div>
+            {(onExportSessions || onImportSessions) && (
+              <div className="session-dropdown-footer">
+                {onExportSessions && (
+                  <button
+                    type="button"
+                    className="session-transfer-btn"
+                    disabled={disabled || importing}
+                    onClick={() => void handleExport()}
+                  >
+                    导出 JSON
+                  </button>
+                )}
+                {onImportSessions && (
+                  <button
+                    type="button"
+                    className="session-transfer-btn"
+                    disabled={disabled || importing}
+                    onClick={handleImportClick}
+                  >
+                    {importing ? "导入中…" : "导入合并"}
+                  </button>
+                )}
+                <input
+                  ref={importInputRef}
+                  type="file"
+                  accept=".json,application/json"
+                  className="session-import-input"
+                  onChange={(event) => void handleImportSelected(event)}
+                />
+              </div>
+            )}
           </div>,
           document.body
         )}

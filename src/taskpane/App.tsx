@@ -8,12 +8,11 @@ import { useSelection } from "./hooks/useSelection";
 import { useViewportScale } from "./hooks/useViewportScale";
 import { useChat } from "./hooks/useChat";
 import { ActionType, AppSettings, AppView, DEFAULT_SETTINGS, PendingAttachment } from "./types";
-import { getActionById } from "./prompts/actions";
 import { ensureOfficeReady, loadSettings, saveSettings, saveSelectedModel, saveWebSearchEnabled } from "./services/storageService";
 import { ensureSelectedModelVisible } from "./services/modelService";
-import { applyText, captureCursor, clearTrackedRange } from "./services/wordService";
+import { applyText, captureCursor, captureSelection, clearTrackedRange, hasTrackedRange, readCurrentSelection } from "./services/wordService";
 import { applyFormFillContent, clearFormFillScope, resolveFormFillData } from "./services/formFillService";
-import { getInsertFirstLineIndentChars } from "./utils/textFormat";
+import { getInsertFirstLineIndentChars, prepareTextForWordDocument } from "./utils/textFormat";
 import { applyThemeColor } from "./utils/theme";
 
 export function App() {
@@ -23,6 +22,11 @@ export function App() {
 
   const { selection } = useSelection();
   useViewportScale();
+
+  const showToast = useCallback((text: string) => {
+    setToast(text);
+    setTimeout(() => setToast(""), 2500);
+  }, []);
 
   const {
     messages,
@@ -38,12 +42,16 @@ export function App() {
     startEditMessage,
     cancelEditMessage,
     deleteMessage,
+    stopGeneration,
     switchSession,
     renameSession,
     reorderSessions,
     deleteSession,
+    exportSessions,
+    importSessions,
+    contextUsage,
     newConversation,
-  } = useChat(settings);
+  } = useChat(settings, { onNotify: showToast, hasSelection: selection.hasSelection });
 
   useEffect(() => {
     ensureOfficeReady().then(() =>
@@ -64,11 +72,6 @@ export function App() {
     }
   }, [view, settings.themeColorId]);
 
-  const showToast = (text: string) => {
-    setToast(text);
-    setTimeout(() => setToast(""), 2500);
-  };
-
   const handleSend = useCallback(
     async (message: string, attachments?: PendingAttachment[]): Promise<string | null> => {
       const error = await sendMessage(
@@ -83,27 +86,52 @@ export function App() {
   );
 
   const handleSlashAction = useCallback(
-    (actionId: string) => {
+    async (actionId: string) => {
+      if (settings.quickApplyEnabled && actionId !== "fillForm") {
+        const error = await runDirectAction(
+          actionId as ActionType,
+          selection.hasSelection ? selection.text : undefined
+        );
+        if (error) showToast(error);
+        else showToast("已写入文档");
+        return;
+      }
+
       runAction(actionId as ActionType, selection.hasSelection ? selection.text : undefined);
     },
-    [runAction, selection.hasSelection, selection.text]
+    [runAction, runDirectAction, selection.hasSelection, selection.text, settings.quickApplyEnabled]
   );
 
   const handleQuickAction = useCallback(
     async (actionId: string) => {
-      const action = getActionById(actionId as ActionType);
-      const error = await runDirectAction(actionId as ActionType, selection.text);
-      if (error) {
-        showToast(error);
-      } else {
-        showToast(`已${action?.label ?? "处理"}选中文本`);
+      if (actionId === "fillForm") {
+        const error = await sendMessage("/填表", selection.hasSelection ? selection.text : undefined);
+        if (error) showToast(error);
+        return;
       }
+
+      if (settings.quickApplyEnabled) {
+        const error = await runDirectAction(
+          actionId as ActionType,
+          selection.hasSelection ? selection.text : undefined
+        );
+        if (error) showToast(error);
+        else showToast("已写入文档");
+        return;
+      }
+
+      runAction(actionId as ActionType, selection.hasSelection ? selection.text : undefined);
     },
-    [runDirectAction, selection.text]
+    [runAction, runDirectAction, sendMessage, selection.hasSelection, selection.text, settings.quickApplyEnabled]
   );
 
   const handleApply = useCallback(
-    async (content: string, _mode: "replace" | "insert", formFill?: boolean) => {
+    async (
+      content: string,
+      mode: "replace" | "insert",
+      formFill?: boolean,
+      referenceText?: string
+    ) => {
       if (formFill) {
         const result = await applyFormFillContent(content);
         if (result.success) {
@@ -125,14 +153,41 @@ export function App() {
         return;
       }
 
+      const latestSettings = await loadSettings();
+      let refText = referenceText?.trim() || "";
+      if (!refText) {
+        const selectionSnapshot = await readCurrentSelection();
+        refText = selectionSnapshot.text;
+      }
+      const cleanedContent = prepareTextForWordDocument(content, refText);
+
+      if (mode === "replace") {
+        if (!hasTrackedRange()) {
+          const captured = await captureSelection();
+          if (!captured.success) {
+            showToast("请重新选中要替换的文本");
+            return;
+          }
+          if (!refText) refText = captured.text;
+        }
+
+        const result = await applyText(cleanedContent);
+        if (result.success) {
+          showToast("已替换选中文本");
+          clearTrackedRange();
+        } else {
+          showToast(result.error || "替换失败");
+        }
+        return;
+      }
+
       await captureCursor();
 
-      const latestSettings = await loadSettings();
       const applyOptions = {
         firstLineIndentChars: getInsertFirstLineIndentChars(latestSettings, false),
       };
 
-      const result = await applyText(content, applyOptions);
+      const result = await applyText(cleanedContent, applyOptions);
       if (result.success) {
         showToast("已插入到文档");
         clearTrackedRange();
@@ -197,6 +252,19 @@ export function App() {
     clearFormFillScope();
   }, [newConversation]);
 
+  const handleExportSessions = useCallback(async () => {
+    await exportSessions();
+  }, [exportSessions]);
+
+  const handleImportSessions = useCallback(
+    async (file: File): Promise<string | null> => {
+      const error = await importSessions(file);
+      if (error) showToast(error);
+      return error;
+    },
+    [importSessions, showToast]
+  );
+
   return (
     <div className="app-container chat-layout">
       {view === "settings" ? (
@@ -236,6 +304,7 @@ export function App() {
               onCancelEdit={cancelEditMessage}
               onEditResend={handleEditResend}
               onDelete={handleDeleteMessage}
+              onStop={stopGeneration}
               onNotify={showToast}
               onQuickAction={handleQuickAction}
               hasSelection={selection.hasSelection}
@@ -262,6 +331,9 @@ export function App() {
             onRenameSession={renameSession}
             onReorderSessions={reorderSessions}
             onDeleteSession={deleteSession}
+            onExportSessions={handleExportSessions}
+            onImportSessions={handleImportSessions}
+            contextUsage={contextUsage}
             onError={showToast}
             onNotify={showToast}
           />

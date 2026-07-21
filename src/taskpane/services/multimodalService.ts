@@ -1,4 +1,10 @@
-import { ChatMessage, ChatMessageContent, MessageAttachment, PendingAttachment, ChatMessageContentPart, ChatMessageImagePart } from "../types";
+import {
+  ChatMessageContent,
+  MessageAttachment,
+  PendingAttachment,
+  ChatMessageContentPart,
+  ChatMessageImagePart,
+} from "../types";
 
 const MAX_DOCUMENT_CHARS = 120000;
 
@@ -53,6 +59,25 @@ export function toUiAttachments(attachments: PendingAttachment[]): MessageAttach
       item.kind === "document"
         ? item.textContent?.trim().slice(0, 80) || item.name
         : undefined,
+    textContent: item.kind === "document" ? item.textContent : undefined,
+    imageDataUrl: item.kind === "image" ? item.imageDataUrl : undefined,
+  }));
+}
+
+export function messageAttachmentsToPending(
+  attachments?: MessageAttachment[]
+): PendingAttachment[] {
+  if (!attachments?.length) return [];
+
+  return attachments.map((item) => ({
+    id: item.id,
+    kind: item.kind,
+    name: item.name,
+    mimeType: item.kind === "image" ? "image/png" : "text/plain",
+    imageDataUrl: item.imageDataUrl,
+    textContent: item.textContent,
+    previewUrl: item.previewUrl,
+    textPreview: item.textPreview,
   }));
 }
 
@@ -85,9 +110,20 @@ export function historyMessageToApiContent(message: {
   content: string;
   attachments?: MessageAttachment[];
 }): ChatMessageContent {
-  if (!message.attachments?.length) return message.content;
+  const pending = messageAttachmentsToPending(message.attachments);
+  if (!pending.length) return message.content;
 
-  const attachmentSummary = message.attachments
+  const hasFullAttachmentData = pending.some(
+    (item) =>
+      (item.kind === "document" && item.textContent?.trim()) ||
+      (item.kind === "image" && item.imageDataUrl)
+  );
+
+  if (hasFullAttachmentData) {
+    return buildMultimodalUserContent(message.content, pending);
+  }
+
+  const attachmentSummary = message.attachments!
     .map((item) => (item.kind === "image" ? `[图片：${item.name}]` : `[文档：${item.name}]`))
     .join(" ");
 

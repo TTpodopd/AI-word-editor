@@ -1,18 +1,21 @@
 import React, { useEffect, useState } from "react";
-import { normalizeAssistantContent } from "../utils/textFormat";
+import { prepareTextForWordDocument } from "../utils/textFormat";
+import { openExternalLink } from "../utils/openExternalLink";
 import { formatFormFillPreview, resolveFormFillData } from "../services/formFillService";
-import { UIMessage } from "../types";
+import { UIMessage, MessageSearchInfo } from "../types";
+import { TextDiffPreview } from "./TextDiffPreview";
 
 interface MessageBubbleProps {
   message: UIMessage;
   editing: boolean;
   disabled: boolean;
-  onApply: (content: string, applyMode: "replace" | "insert", formFill?: boolean) => void;
+  onApply: (content: string, applyMode: "replace" | "insert", formFill?: boolean, referenceText?: string) => void;
   onRegenerate: (messageId: string) => void;
   onStartEdit: (messageId: string) => void;
   onCancelEdit: () => void;
   onEditResend: (messageId: string, content: string) => void;
   onDelete: (messageId: string) => void;
+  onStop?: () => void;
   onNotify?: (text: string) => void;
 }
 
@@ -42,6 +45,92 @@ function AttachmentList({ attachments }: { attachments: NonNullable<UIMessage["a
           )}
         </div>
       ))}
+    </div>
+  );
+}
+
+function SearchSourcesPanel({
+  searchInfo,
+  onNotify,
+}: {
+  searchInfo: MessageSearchInfo;
+  onNotify?: (text: string) => void;
+}) {
+  const resultCount = searchInfo.results.filter((item) => item.url?.trim()).length;
+  const allUrls = searchInfo.results.map((item) => item.url.trim()).filter(Boolean).join("\n");
+
+  const handleCopyUrl = async (url: string) => {
+    const copied = await copyToClipboard(url);
+    onNotify?.(copied ? "链接已复制" : "复制失败");
+  };
+
+  const handleCopyAllUrls = async () => {
+    if (!allUrls) return;
+    const copied = await copyToClipboard(allUrls);
+    onNotify?.(copied ? "全部链接已复制" : "复制失败");
+  };
+
+  return (
+    <div className={`message-search-sources${searchInfo.error ? " message-search-sources--error" : ""}`}>
+      <div className="message-search-header">
+        <span className="message-search-label">联网搜索</span>
+        <span className="message-search-query">「{searchInfo.query}」</span>
+        {!searchInfo.error && (
+          <span className="message-search-count">
+            {resultCount > 0 ? `${resultCount} 个来源` : "未找到来源"}
+          </span>
+        )}
+        {resultCount > 1 && (
+          <button type="button" className="message-search-copy-all" onClick={() => void handleCopyAllUrls()}>
+            复制全部链接
+          </button>
+        )}
+      </div>
+      {searchInfo.error && (
+        <div className="message-search-error">搜索失败：{searchInfo.error}</div>
+      )}
+      {resultCount > 0 && (
+        <ul className="message-search-list">
+          {searchInfo.results.map((item, index) => {
+            const url = item.url?.trim();
+            if (!url) return null;
+
+            return (
+              <li key={`${url}-${index}`} className="message-search-item">
+                <div className="message-search-item-title">
+                  <span className="message-search-index">{index + 1}.</span>
+                  <button
+                    type="button"
+                    className="message-search-title-link"
+                    onClick={() => openExternalLink(url)}
+                    title={item.content?.trim() || url}
+                  >
+                    {item.title?.trim() || url}
+                  </button>
+                </div>
+                <div className="message-search-url-row">
+                  <button
+                    type="button"
+                    className="message-search-url-link"
+                    onClick={() => openExternalLink(url)}
+                    title="在浏览器中打开"
+                  >
+                    {url}
+                  </button>
+                  <button
+                    type="button"
+                    className="message-search-copy-btn"
+                    onClick={() => void handleCopyUrl(url)}
+                    title="复制链接"
+                  >
+                    复制
+                  </button>
+                </div>
+              </li>
+            );
+          })}
+        </ul>
+      )}
     </div>
   );
 }
@@ -107,6 +196,7 @@ export function MessageBubble({
   onCancelEdit,
   onEditResend,
   onDelete,
+  onStop,
   onNotify,
 }: MessageBubbleProps) {
   const isUser = message.role === "user";
@@ -189,15 +279,30 @@ export function MessageBubble({
   }
 
   if (message.status === "loading") {
+    const streamingContent = message.content.trim();
     return (
       <div className="message-row assistant">
         <div className="message-avatar">AI</div>
         <div className="message-bubble assistant-bubble loading-bubble">
-          <div className="typing-dots">
-            <span />
-            <span />
-            <span />
-          </div>
+          {message.searchInfo && (
+            <SearchSourcesPanel searchInfo={message.searchInfo} onNotify={onNotify} />
+          )}
+          {streamingContent ? (
+            <div className="message-content assistant-content streaming-content">{streamingContent}</div>
+          ) : (
+            <div className="typing-dots">
+              <span />
+              <span />
+              <span />
+            </div>
+          )}
+          {onStop && (
+            <div className="message-actions">
+              <button className="msg-action-btn stop-btn" onClick={onStop} disabled={disabled}>
+                停止
+              </button>
+            </div>
+          )}
         </div>
       </div>
     );
@@ -234,24 +339,40 @@ export function MessageBubble({
 
   const formData = resolveFormFillData(message.content);
   const isFormFillMessage = message.formFill || !!formData;
-  const displayContent = formData
+  const revisedContent = formData
     ? formatFormFillPreview(formData)
-    : normalizeAssistantContent(message.content);
-  const applyLabel = isFormFillMessage ? "填充到文档" : "插入到文档";
+    : prepareTextForWordDocument(message.content, message.sourceText || "");
+  const hasReplacePreview = !!message.sourceText && !isFormFillMessage;
+  const applyMode = message.applyMode ?? "insert";
+  const applyLabel = isFormFillMessage
+    ? "填充到文档"
+    : applyMode === "replace"
+      ? "确定替换"
+      : "插入到文档";
+  const copyContent = revisedContent;
 
   return (
     <div className="message-row assistant">
       <div className="message-avatar">AI</div>
       <div className="message-bubble assistant-bubble">
+        {message.searchInfo && (
+          <SearchSourcesPanel searchInfo={message.searchInfo} onNotify={onNotify} />
+        )}
         <div className="message-content assistant-content">
-          {displayContent}
+          {hasReplacePreview ? (
+            <TextDiffPreview
+              original={message.sourceText!}
+              revised={revisedContent}
+              actionLabel={message.actionLabel}
+            />
+          ) : (
+            revisedContent
+          )}
         </div>
         <div className="message-actions">
           <button
             className="msg-action-btn primary"
-            onClick={() =>
-              onApply(message.content, "insert", isFormFillMessage)
-            }
+            onClick={() => onApply(message.content, applyMode, isFormFillMessage, message.sourceText)}
             disabled={disabled}
           >
             {applyLabel}
@@ -266,7 +387,7 @@ export function MessageBubble({
           <button
             className="msg-action-btn"
             title="复制"
-            onClick={() => handleCopy(displayContent)}
+            onClick={() => handleCopy(copyContent)}
             disabled={disabled}
           >
             复制

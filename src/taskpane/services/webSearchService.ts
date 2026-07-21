@@ -170,7 +170,12 @@ export async function augmentMessagesWithWebSearch(
   apiMessages: ChatMessage[],
   userQuery: string,
   webSearch: WebSearchSettings
-): Promise<{ messages: ChatMessage[]; searchError?: string }> {
+): Promise<{
+  messages: ChatMessage[];
+  searchQuery?: string;
+  searchResults?: WebSearchResultItem[];
+  searchError?: string;
+}> {
   if (!webSearch.enabled || !webSearch.apiKey.trim()) {
     return { messages: apiMessages };
   }
@@ -196,7 +201,12 @@ export async function augmentMessagesWithWebSearch(
   const lastIndex = messages.length - 1;
   const lastMessage = messages[lastIndex];
   if (lastMessage?.role !== "user") {
-    return { messages, searchError: searchResult.error };
+    return {
+      messages,
+      searchQuery,
+      searchResults: searchResult.results,
+      searchError: searchResult.error,
+    };
   }
 
   if (searchResult.error) {
@@ -207,7 +217,12 @@ export async function augmentMessagesWithWebSearch(
         `\n\n（联网搜索失败：${searchResult.error}，请基于已有知识回答。）`
       ),
     };
-    return { messages, searchError: searchResult.error };
+    return {
+      messages,
+      searchQuery,
+      searchResults: [],
+      searchError: searchResult.error,
+    };
   }
 
   const formatted = formatWebSearchResults(searchResult.results);
@@ -230,5 +245,9 @@ export async function augmentMessagesWithWebSearch(
     messages[lastIndex] = { ...lastMessage, content: parts };
   }
 
-  return { messages };
+  return {
+    messages,
+    searchQuery,
+    searchResults: searchResult.results,
+  };
 }

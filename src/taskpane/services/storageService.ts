@@ -153,6 +153,7 @@ function parseSettings(raw: string): AppSettings {
         Math.max(1, Number(parsed.webSearch?.resultLimit) || DEFAULT_WEB_SEARCH.resultLimit)
       ),
     },
+    quickApplyEnabled: !!parsed.quickApplyEnabled,
   };
 }
 

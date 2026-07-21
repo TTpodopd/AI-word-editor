@@ -1,6 +1,8 @@
 import React, { useRef, useState } from "react";
 
 import { AppSettings, ChatSession, PendingAttachment } from "../types";
+import { ContextUsageStats } from "../utils/chatHistoryBudget";
+import { ContextUsageIndicator } from "./ContextUsageIndicator";
 
 import { getVisibleModels, resolveModel } from "../services/modelService";
 
@@ -18,8 +20,9 @@ import { useResizableInputHeight } from "../hooks/useResizableInputHeight";
 import {
   ACCEPTED_UPLOAD_TYPES,
   createAttachmentFromFile,
+  createDocumentAttachmentFromText,
 } from "../services/attachmentService";
-import { insertLatexFormula, captureSelection, clearTrackedRange } from "../services/wordService";
+import { insertLatexFormula, captureSelection, clearTrackedRange, readDocumentTextForAttachment } from "../services/wordService";
 import { extractLatexPreset, looksLikeLatex } from "../utils/latexOoxml";
 
 
@@ -58,6 +61,11 @@ interface ChatInputProps {
 
   onDeleteSession: (sessionId: string) => void;
 
+  onExportSessions?: () => void | Promise<void>;
+  onImportSessions?: (file: File) => void | Promise<string | null>;
+
+  contextUsage: ContextUsageStats;
+
   onError?: (message: string) => void;
   onNotify?: (message: string) => void;
 
@@ -77,6 +85,14 @@ function FormulaIcon() {
   return (
     <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
       <path d="M3 14h2l1.2-3H10l1 3h2L9.2 2H7L3 14zm4.2-5L8.4 5.6 9.6 9H7.2zM11.5 2v2h2V2h-2zm0 3v2h2V5h-2zm0 3v2h2V8h-2z" />
+    </svg>
+  );
+}
+
+function QuoteIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+      <path d="M3 4h10v1H3V4zm0 3.5h10v1H3v-1zm0 3.5h7v1H3v-1z" />
     </svg>
   );
 }
@@ -112,6 +128,11 @@ export function ChatInput({
   onReorderSessions,
 
   onDeleteSession,
+
+  onExportSessions,
+  onImportSessions,
+
+  contextUsage,
 
   onError,
   onNotify,
@@ -224,6 +245,34 @@ export function ChatInput({
 
   const handleRemoveAttachment = (id: string) => {
     setAttachments((prev) => prev.filter((item) => item.id !== id));
+  };
+
+  const handleQuoteDocument = async () => {
+    if (disabled || uploading) return;
+
+    setUploading(true);
+    try {
+      const result = await readDocumentTextForAttachment();
+      if (!result.success) {
+        notifyError(result.error || "读取文档内容失败");
+        return;
+      }
+
+      const attachment = await createDocumentAttachmentFromText(result.sourceName, result.text);
+      const next = [...attachments, attachment];
+      const visionError = validateVisionModel(next);
+      if (visionError) {
+        notifyError(visionError);
+        return;
+      }
+
+      setAttachments(next);
+      onNotify?.(`已引用${result.sourceName}`);
+    } catch (error) {
+      notifyError(error instanceof Error ? error.message : "引用文档失败");
+    } finally {
+      setUploading(false);
+    }
   };
 
   const handleOpenLatexDialog = async () => {
@@ -508,6 +557,15 @@ export function ChatInput({
           <button
             type="button"
             className="upload-btn"
+            onClick={() => void handleQuoteDocument()}
+            disabled={disabled || uploading}
+            title="引用 Word 选区或全文"
+          >
+            <QuoteIcon />
+          </button>
+          <button
+            type="button"
+            className="upload-btn"
             onClick={() => void handleOpenLatexDialog()}
             disabled={disabled || uploading}
             title="插入 LaTeX 公式"
@@ -553,18 +611,15 @@ export function ChatInput({
       />
 
       <div className="chat-input-bottom">
-
-        <ModelSelector
-
-          options={modelOptions}
-
-          value={settings.selectedModelId}
-
-          disabled={disabled}
-
-          onChange={onModelChange}
-
-        />
+        <div className="chat-input-bottom-left">
+          <ModelSelector
+            options={modelOptions}
+            value={settings.selectedModelId}
+            disabled={disabled}
+            onChange={onModelChange}
+          />
+          <ContextUsageIndicator usage={contextUsage} />
+        </div>
 
         <ChatBottomActions
 
@@ -589,7 +644,8 @@ export function ChatInput({
           onReorderSessions={onReorderSessions}
 
           onDeleteSession={onDeleteSession}
-
+          onExportSessions={onExportSessions}
+          onImportSessions={onImportSessions}
         />
 
       </div>

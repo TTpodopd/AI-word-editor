@@ -3,7 +3,7 @@ import { DEFAULT_THEME_COLOR_ID } from "./constants/themeColors";
 
 export type LLMProvider = "deepseek" | "openai" | "qwen" | "custom";
 
-export type ActionType = "summarize" | "simplify" | "expand" | "polish" | "translate" | "fillForm" | "custom";
+export type ActionType = "summarize" | "simplify" | "expand" | "polish" | "proofread" | "translate" | "fillForm" | "custom";
 
 export type AppView = "chat" | "settings";
 
@@ -64,6 +64,8 @@ export interface MessageAttachment {
   name: string;
   previewUrl?: string;
   textPreview?: string;
+  textContent?: string;
+  imageDataUrl?: string;
 }
 
 export interface PendingAttachment {
@@ -77,6 +79,18 @@ export interface PendingAttachment {
   textPreview?: string;
 }
 
+export interface MessageSearchResult {
+  title: string;
+  url: string;
+  content?: string;
+}
+
+export interface MessageSearchInfo {
+  query: string;
+  results: MessageSearchResult[];
+  error?: string;
+}
+
 export interface UIMessage {
   id: string;
   role: "user" | "assistant";
@@ -85,6 +99,9 @@ export interface UIMessage {
   attachments?: MessageAttachment[];
   applyMode?: "replace" | "insert";
   formFill?: boolean;
+  sourceText?: string;
+  actionLabel?: string;
+  searchInfo?: MessageSearchInfo;
   status?: "loading" | "error" | "done";
   error?: string;
 }
@@ -135,6 +152,7 @@ export interface AppSettings {
   systemPrompts: SystemPromptSettings;
   themeColorId: ThemeColorId;
   webSearch: WebSearchSettings;
+  quickApplyEnabled?: boolean;
 }
 
 export const BUILTIN_MODEL_OPTIONS: ModelConfig[] = [
@@ -172,6 +190,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   systemPrompts: { ...DEFAULT_SYSTEM_PROMPTS },
   themeColorId: DEFAULT_THEME_COLOR_ID,
   webSearch: { ...DEFAULT_WEB_SEARCH },
+  quickApplyEnabled: false,
 };
 
 export const SYSTEM_PROMPT_WITH_SELECTION = DEFAULT_SYSTEM_PROMPTS.withSelection;

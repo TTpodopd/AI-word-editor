@@ -14,6 +14,8 @@ interface ChatBottomActionsProps {
   onRenameSession: (sessionId: string, title: string) => void;
   onReorderSessions: (orderedIds: string[]) => void;
   onDeleteSession: (sessionId: string) => void;
+  onExportSessions?: () => void | Promise<void>;
+  onImportSessions?: (file: File) => void | Promise<string | null>;
 }
 
 export function ChatBottomActions({
@@ -28,6 +30,8 @@ export function ChatBottomActions({
   onRenameSession,
   onReorderSessions,
   onDeleteSession,
+  onExportSessions,
+  onImportSessions,
 }: ChatBottomActionsProps) {
   return (
     <div className="chat-bottom-actions">
@@ -40,6 +44,8 @@ export function ChatBottomActions({
         onRename={onRenameSession}
         onReorder={onReorderSessions}
         onDelete={onDeleteSession}
+        onExportSessions={onExportSessions}
+        onImportSessions={onImportSessions}
       />
       <button className="icon-btn" title="新建对话" onClick={onNewChat} disabled={disabled}>
         <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">

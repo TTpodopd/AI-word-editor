@@ -83,6 +83,7 @@ export function SettingsPanel({ settings, onSave }: SettingsPanelProps) {
     systemPrompts: settings.systemPrompts || { ...DEFAULT_SYSTEM_PROMPTS },
     themeColorId: settings.themeColorId || DEFAULT_THEME_COLOR_ID,
     webSearch: settings.webSearch || { ...DEFAULT_WEB_SEARCH },
+    quickApplyEnabled: !!settings.quickApplyEnabled,
   });
 
   const [testResults, setTestResults] = useState<Record<string, { ok: boolean; error?: string }>>({});
@@ -102,6 +103,7 @@ export function SettingsPanel({ settings, onSave }: SettingsPanelProps) {
       systemPrompts: settings.systemPrompts || { ...DEFAULT_SYSTEM_PROMPTS },
       themeColorId: settings.themeColorId || DEFAULT_THEME_COLOR_ID,
       webSearch: settings.webSearch || { ...DEFAULT_WEB_SEARCH },
+      quickApplyEnabled: !!settings.quickApplyEnabled,
     });
 
   }, [settings]);
@@ -618,6 +620,28 @@ export function SettingsPanel({ settings, onSave }: SettingsPanelProps) {
               settings={localSettings.webSearch || { ...DEFAULT_WEB_SEARCH }}
               onChange={handleWebSearchChange}
             />
+          </SettingsCollapsibleSection>
+
+          <SettingsCollapsibleSection
+            title="快捷操作"
+            description="选中文本后，顶部按钮与 / 指令的处理方式。"
+            badge={localSettings.quickApplyEnabled ? "直接写入" : "预览确认"}
+            expanded={isExpanded("section-quick-apply")}
+            onToggle={() => toggleSection("section-quick-apply")}
+          >
+            <label className="settings-checkbox-row">
+              <input
+                type="checkbox"
+                checked={!!localSettings.quickApplyEnabled}
+                onChange={(e) =>
+                  setLocalSettings((prev) => ({ ...prev, quickApplyEnabled: e.target.checked }))
+                }
+              />
+              <span>快捷操作直接写入文档（跳过预览确认）</span>
+            </label>
+            <p className="settings-hint">
+              开启后，润色、校对等预设指令会直接替换选中文本；关闭则先在对话区预览再确认。
+            </p>
           </SettingsCollapsibleSection>
 
           <SettingsCollapsibleSection

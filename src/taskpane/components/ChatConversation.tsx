@@ -8,12 +8,13 @@ interface ChatConversationProps {
   messages: UIMessage[];
   loading: boolean;
   editingMessageId: string | null;
-  onApply: (content: string, applyMode: "replace" | "insert", formFill?: boolean) => void;
+  onApply: (content: string, applyMode: "replace" | "insert", formFill?: boolean, referenceText?: string) => void;
   onRegenerate: (messageId: string) => void;
   onStartEdit: (messageId: string) => void;
   onCancelEdit: () => void;
   onEditResend: (messageId: string, content: string) => void;
   onDelete: (messageId: string) => void;
+  onStop: () => void;
   onNotify?: (text: string) => void;
   onQuickAction: (actionId: string) => void;
   hasSelection: boolean;
@@ -29,6 +30,7 @@ export function ChatConversation({
   onCancelEdit,
   onEditResend,
   onDelete,
+  onStop,
   onNotify,
   onQuickAction,
   hasSelection,
@@ -64,6 +66,7 @@ export function ChatConversation({
             onCancelEdit={onCancelEdit}
             onEditResend={onEditResend}
             onDelete={onDelete}
+            onStop={onStop}
             onNotify={onNotify}
           />
         ))}

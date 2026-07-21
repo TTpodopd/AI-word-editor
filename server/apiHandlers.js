@@ -1,27 +1,5 @@
 const PROXY_VERSION = 5;
 
-const PROVIDER_ENDPOINTS = {
-  deepseek: "https://api.deepseek.com/chat/completions",
-  openai: "https://api.openai.com/v1/chat/completions",
-  qwen: "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions",
-};
-
-function normalizeApiBaseUrl(url) {
-  return String(url || "")
-    .trim()
-    .replace(/\/+$/, "")
-    .replace(/\/chat\/completions$/i, "");
-}
-
-function resolveEndpoint(provider, apiBaseUrl) {
-  if (provider === "custom") {
-    const base = normalizeApiBaseUrl(apiBaseUrl);
-    if (!base) return null;
-    return `${base}/chat/completions`;
-  }
-  return PROVIDER_ENDPOINTS[provider] || null;
-}
-
 async function handleHealth(_req, res) {
   res.status(200).json({
     status: "ok",
@@ -35,48 +13,8 @@ async function handleHealth(_req, res) {
 
 async function handleChat(req, res) {
   const { getRequestBody } = require("./vercelUtils");
-  const { provider, model, messages, apiBaseUrl } = getRequestBody(req);
-  const apiKey = req.headers["x-api-key"];
-
-  if (!provider || !model || !messages) {
-    return res.status(400).json({ error: "缺少必要参数: provider, model, messages" });
-  }
-
-  if (!apiKey) {
-    return res.status(401).json({ error: "未提供 API Key，请在设置中配置" });
-  }
-
-  const endpoint = resolveEndpoint(provider, apiBaseUrl);
-  if (!endpoint) {
-    return res.status(400).json({ error: `不支持的 Provider 或缺少 API Base URL: ${provider}` });
-  }
-
-  const response = await fetch(endpoint, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${apiKey}`,
-    },
-    body: JSON.stringify({
-      model,
-      messages,
-      temperature: 0.7,
-    }),
-  });
-
-  const data = await response.json();
-
-  if (!response.ok) {
-    const errMsg =
-      data?.error?.message ||
-      data?.message ||
-      data?.code ||
-      `API 请求失败 (${response.status})`;
-    return res.status(response.status).json({ error: errMsg });
-  }
-
-  const content = data.choices?.[0]?.message?.content || "";
-  return res.json({ content });
+  const { executeLlmChat } = require("./llmChatHandler");
+  return executeLlmChat(getRequestBody(req), req.headers, res);
 }
 
 async function handleWebSearch(req, res) {

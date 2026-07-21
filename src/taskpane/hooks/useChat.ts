@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ActionType, AppSettings, ChatMessage, ChatSession, getSystemPrompt, PendingAttachment, UIMessage } from "../types";
+import { ActionType, AppSettings, ChatMessage, ChatSession, getSystemPrompt, MessageSearchInfo, PendingAttachment, ResolvedModel, UIMessage } from "../types";
 import { buildMessages, getActionById } from "../prompts/actions";
-import { sendChatWithModel } from "../services/llmService";
+import { sendChatStreamWithModel, sendChatWithModel } from "../services/llmService";
 import { augmentMessagesWithWebSearch } from "../services/webSearchService";
 import { resolveModel } from "../services/modelService";
 import {
@@ -15,12 +15,13 @@ import {
   orderSessions,
   saveChatSessions,
 } from "../services/storageService";
-import { normalizeAssistantContent } from "../utils/textFormat";
+import { extractAssistantResultText, normalizeAssistantContent, prepareTextForWordDocument } from "../utils/textFormat";
 import { ApplyMode, applyText, captureCursor, captureSelection, clearTrackedRange } from "../services/wordService";
 import { hasImageAttachments, modelSupportsVision } from "../constants/modelCapabilities";
 import {
   buildMultimodalUserContent,
   historyMessageToApiContent,
+  messageAttachmentsToPending,
   toUiAttachments,
 } from "../services/multimodalService";
 import {
@@ -29,6 +30,17 @@ import {
   FORM_FILL_SLASH_COMMAND,
   isFormFillCommand,
 } from "../prompts/formFill";
+import {
+  computeContextUsageStats,
+  createEmptyContextUsage,
+  formatHistoryTrimNotice,
+  trimChatHistoryToBudget,
+  type ContextUsageStats,
+} from "../utils/chatHistoryBudget";
+import {
+  exportAllSessionsToFile,
+  importSessionsFromFile,
+} from "../services/sessionTransferService";
 import {
   captureFormFillScope,
   clearFormFillScope,
@@ -67,6 +79,24 @@ function buildFormFillInstruction(content: string, attachments: PendingAttachmen
   return parts.join("\n\n");
 }
 
+function buildSearchInfo(
+  searchQuery?: string,
+  searchResults?: { title: string; url: string; content: string }[],
+  searchError?: string
+): MessageSearchInfo | undefined {
+  if (!searchQuery?.trim()) return undefined;
+
+  return {
+    query: searchQuery.trim(),
+    results: (searchResults || []).map((item) => ({
+      title: item.title,
+      url: item.url,
+      content: item.content,
+    })),
+    error: searchError,
+  };
+}
+
 function buildDisplayContent(text: string, attachments: PendingAttachment[]): string {
   const trimmed = text.trim();
   if (trimmed) return trimmed;
@@ -92,15 +122,30 @@ function applyOrderedStore(store: Awaited<ReturnType<typeof loadChatSessions>>) 
   return { ...store, sessions, sessionOrder };
 }
 
-export function useChat(settings: AppSettings) {
+export function useChat(
+  settings: AppSettings,
+  options?: { onNotify?: (text: string) => void; hasSelection?: boolean }
+) {
   const [session, setSession] = useState<ChatSession | null>(null);
   const [sessions, setSessions] = useState<ChatSession[]>([]);
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [applyMode, setApplyMode] = useState<ApplyMode>("insert");
   const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
+  const [contextUsage, setContextUsage] = useState<ContextUsageStats>(() => createEmptyContextUsage());
   const sessionRef = useRef<ChatSession | null>(null);
   const settingsRef = useRef<AppSettings>(settings);
+  const abortControllerRef = useRef<AbortController | null>(null);
+  const onNotifyRef = useRef(options?.onNotify);
+  const hasSelectionRef = useRef(options?.hasSelection ?? false);
+
+  useEffect(() => {
+    onNotifyRef.current = options?.onNotify;
+  }, [options?.onNotify]);
+
+  useEffect(() => {
+    hasSelectionRef.current = options?.hasSelection ?? false;
+  }, [options?.hasSelection]);
 
   useEffect(() => {
     settingsRef.current = settings;
@@ -115,6 +160,34 @@ export function useChat(settings: AppSettings) {
       return settingsRef.current;
     }
   }, []);
+
+  const syncContextUsageFromApiMessages = useCallback((apiMessages: ChatMessage[]) => {
+    setContextUsage(computeContextUsageStats(apiMessages));
+  }, []);
+
+  const syncContextUsageFromSession = useCallback(async () => {
+    const current = sessionRef.current;
+    if (!current) {
+      setContextUsage(createEmptyContextUsage());
+      return;
+    }
+
+    const latestSettings = await getLatestSettings();
+    const doneMessages = current.messages.filter(
+      (message) =>
+        message.status === "done" && (message.content.trim() || message.attachments?.length)
+    );
+    const apiMessages = buildApiMessages(
+      doneMessages,
+      hasSelectionRef.current,
+      latestSettings
+    );
+    syncContextUsageFromApiMessages(apiMessages);
+  }, [getLatestSettings, syncContextUsageFromApiMessages]);
+
+  useEffect(() => {
+    void syncContextUsageFromSession();
+  }, [session?.id, syncContextUsageFromSession, settings.systemPrompts, options?.hasSelection]);
 
   const applyStore = useCallback((store: Awaited<ReturnType<typeof loadChatSessions>>) => {
     const ordered = applyOrderedStore(store);
@@ -213,6 +286,32 @@ export function useChat(settings: AppSettings) {
     [persistSession]
   );
 
+  const patchMessageLocal = useCallback((id: string, patch: Partial<UIMessage>) => {
+    const current = sessionRef.current;
+    if (!current) return;
+
+    const nextSession = {
+      ...current,
+      messages: current.messages.map((m) => (m.id === id ? { ...m, ...patch } : m)),
+    };
+    sessionRef.current = nextSession;
+    setSession(nextSession);
+  }, []);
+
+  const beginRequest = useCallback(() => {
+    abortControllerRef.current?.abort();
+    abortControllerRef.current = new AbortController();
+    return abortControllerRef.current.signal;
+  }, []);
+
+  const endRequest = useCallback(() => {
+    abortControllerRef.current = null;
+  }, []);
+
+  const stopGeneration = useCallback(() => {
+    abortControllerRef.current?.abort();
+  }, []);
+
   const prepareContext = useCallback(async (selectedText?: string) => {
     let text = selectedText?.trim() || "";
 
@@ -228,13 +327,77 @@ export function useChat(settings: AppSettings) {
     return { text, applyMode: "insert" as ApplyMode };
   }, []);
 
+  const streamAssistantResponse = useCallback(
+    async (
+      assistantId: string,
+      model: ResolvedModel,
+      apiMessages: ChatMessage[],
+      meta: {
+        applyMode?: ApplyMode;
+        sourceText?: string;
+        actionLabel?: string;
+        formFill?: boolean;
+        searchInfo?: MessageSearchInfo;
+      } = {}
+    ) => {
+      const signal = beginRequest();
+
+      const response = await sendChatStreamWithModel(model, apiMessages, {
+        signal,
+        onChunk: (_delta, fullContent) => {
+          patchMessageLocal(assistantId, {
+            content: fullContent,
+            status: "loading",
+          });
+        },
+      });
+
+      endRequest();
+
+      if (response.error && !response.aborted) {
+        await updateMessage(assistantId, {
+          status: "error",
+          error: response.error,
+          content: "",
+          searchInfo: meta.searchInfo,
+        });
+        return;
+      }
+
+      const normalized = normalizeAssistantContent(response.content);
+      const prepared = prepareTextForWordDocument(
+        extractAssistantResultText(normalized),
+        meta.sourceText || ""
+      );
+      const finalContent =
+        prepared.trim() ||
+        (response.aborted ? "（已停止生成）" : meta.sourceText || "");
+
+      await updateMessage(assistantId, {
+        status: "done",
+        content: finalContent,
+        applyMode: meta.applyMode ?? "insert",
+        sourceText: meta.sourceText,
+        actionLabel: meta.actionLabel,
+        formFill: meta.formFill,
+        searchInfo: meta.searchInfo,
+      });
+    },
+    [beginRequest, endRequest, patchMessageLocal, updateMessage]
+  );
+
   const requestAssistant = useCallback(
     async (
       assistantId: string,
       userContent: string,
       selectedText: string,
       priorMessages: UIMessage[],
-      pendingAttachments: PendingAttachment[] = []
+      pendingAttachments: PendingAttachment[] = [],
+      meta: {
+        applyMode?: ApplyMode;
+        sourceText?: string;
+        actionLabel?: string;
+      } = {}
     ) => {
       const model = getCurrentModel();
       if (!model) {
@@ -273,29 +436,29 @@ export function useChat(settings: AppSettings) {
 
       apiMessages.push({ role: "user", content: lastUserContent });
 
-      const { messages: finalMessages } = await augmentMessagesWithWebSearch(
-        apiMessages,
-        userContent,
-        latestSettings.webSearch
-      );
-
-      const response = await sendChatWithModel(model, finalMessages);
-
-      if (response.error) {
-        await updateMessage(assistantId, {
-          status: "error",
-          error: response.error,
-          content: "",
-        });
-      } else {
-        await updateMessage(assistantId, {
-          status: "done",
-          content: normalizeAssistantContent(response.content),
-          applyMode: "insert",
-        });
+      const { messages: budgetMessages, trimmedTurns, trimmedChars } =
+        trimChatHistoryToBudget(apiMessages);
+      if (trimmedTurns > 0) {
+        onNotifyRef.current?.(formatHistoryTrimNotice(trimmedTurns, trimmedChars));
       }
+
+      const { messages: finalMessages, searchQuery, searchResults, searchError } =
+        await augmentMessagesWithWebSearch(budgetMessages, userContent, latestSettings.webSearch);
+
+      const searchInfo = buildSearchInfo(searchQuery, searchResults, searchError);
+      if (searchInfo) {
+        patchMessageLocal(assistantId, { searchInfo });
+      }
+
+      await streamAssistantResponse(assistantId, model, finalMessages, {
+        applyMode: meta.applyMode ?? "insert",
+        sourceText: meta.sourceText,
+        actionLabel: meta.actionLabel,
+        searchInfo,
+      });
+      syncContextUsageFromApiMessages(finalMessages);
     },
-    [getCurrentModel, getLatestSettings, updateMessage]
+    [getCurrentModel, getLatestSettings, patchMessageLocal, streamAssistantResponse, syncContextUsageFromApiMessages, updateMessage]
   );
 
   const requestFormFillAssistant = useCallback(
@@ -462,14 +625,16 @@ export function useChat(settings: AppSettings) {
       try {
         const latestSettings = await getLatestSettings();
         const apiMessages = buildMessages(action, text, latestSettings);
-        const response = await sendChatWithModel(model, apiMessages);
+        const signal = beginRequest();
+        const response = await sendChatWithModel(model, apiMessages, undefined, signal);
+        endRequest();
 
         if (response.error) {
           clearTrackedRange();
           return response.error;
         }
 
-        const result = await applyText(normalizeAssistantContent(response.content));
+        const result = await applyText(prepareTextForWordDocument(response.content, text));
         clearTrackedRange();
 
         if (!result.success) {
@@ -478,10 +643,11 @@ export function useChat(settings: AppSettings) {
 
         return null;
       } finally {
+        endRequest();
         setLoading(false);
       }
     },
-    [getCurrentModel, getLatestSettings, loading]
+    [beginRequest, endRequest, getCurrentModel, getLatestSettings, loading]
   );
 
   const runAction = useCallback(
@@ -493,7 +659,7 @@ export function useChat(settings: AppSettings) {
 
       const captured = await captureSelection();
       const text = selectedText?.trim() || captured.text;
-      if (!text) {
+      if (!captured.success || !text) {
         await appendMessages([
           {
             id: createId(),
@@ -508,8 +674,7 @@ export function useChat(settings: AppSettings) {
       }
 
       setLoading(true);
-      await captureCursor();
-      setApplyMode("insert");
+      setApplyMode("replace");
 
       const userMessage: UIMessage = {
         id: createId(),
@@ -525,7 +690,9 @@ export function useChat(settings: AppSettings) {
         content: "",
         timestamp: Date.now(),
         status: "loading",
-        applyMode: "insert",
+        applyMode: "replace",
+        sourceText: text,
+        actionLabel: action.label,
       };
 
       const current = sessionRef.current ?? (await loadChatSession());
@@ -544,20 +711,15 @@ export function useChat(settings: AppSettings) {
 
       const latestSettings = await getLatestSettings();
       const apiMessages = buildMessages(action, text, latestSettings);
-      const response = await sendChatWithModel(model, apiMessages);
-
-      if (response.error) {
-        await updateMessage(assistantMessage.id, { status: "error", error: response.error });
-      } else {
-        await updateMessage(assistantMessage.id, {
-          status: "done",
-          content: normalizeAssistantContent(response.content),
-          applyMode: "insert",
-        });
-      }
+      await streamAssistantResponse(assistantMessage.id, model, apiMessages, {
+        applyMode: "replace",
+        sourceText: text,
+        actionLabel: action.label,
+      });
+      syncContextUsageFromApiMessages(apiMessages);
       setLoading(false);
     },
-    [appendMessages, getCurrentModel, getLatestSettings, loading, persistSession, updateMessage]
+    [getCurrentModel, getLatestSettings, loading, persistSession, streamAssistantResponse, syncContextUsageFromApiMessages, updateMessage]
   );
 
   const regenerateMessage = useCallback(
@@ -579,10 +741,29 @@ export function useChat(settings: AppSettings) {
         content: "",
         status: "loading",
         error: undefined,
+        searchInfo: undefined,
       });
 
-      const { text } = await prepareContext();
-      await requestAssistant(assistantId, userMessage.content, text, current.messages);
+      const assistantMessage = current.messages[assistantIndex];
+      let text = assistantMessage.sourceText?.trim() || "";
+      if (!text) {
+        const context = await prepareContext();
+        text = context.text;
+      }
+
+      const pendingAttachments = messageAttachmentsToPending(userMessage.attachments);
+      await requestAssistant(
+        assistantId,
+        userMessage.content,
+        text,
+        current.messages,
+        pendingAttachments,
+        {
+          applyMode: assistantMessage.applyMode,
+          sourceText: assistantMessage.sourceText,
+          actionLabel: assistantMessage.actionLabel,
+        }
+      );
       setLoading(false);
     },
     [loading, prepareContext, requestAssistant, updateMessage]
@@ -629,8 +810,9 @@ export function useChat(settings: AppSettings) {
       }
 
       await persistSession({ ...current, messages: nextMessages });
+      await syncContextUsageFromSession();
     },
-    [editingMessageId, loading, persistSession]
+    [editingMessageId, loading, persistSession, syncContextUsageFromSession]
   );
 
   const editAndResend = useCallback(
@@ -649,9 +831,10 @@ export function useChat(settings: AppSettings) {
 
       const { text, applyMode: mode } = await prepareContext(selectedText);
 
+      const originalUser = current.messages[msgIndex];
       const kept = current.messages.slice(0, msgIndex);
       const updatedUser: UIMessage = {
-        ...current.messages[msgIndex],
+        ...originalUser,
         content: trimmed,
         timestamp: Date.now(),
         status: "done",
@@ -669,7 +852,15 @@ export function useChat(settings: AppSettings) {
       const nextMessages = [...kept, updatedUser, assistantMessage];
       await persistSession({ ...current, messages: nextMessages });
 
-      await requestAssistant(assistantMessage.id, trimmed, text, nextMessages);
+      const pendingAttachments = messageAttachmentsToPending(originalUser.attachments);
+      await requestAssistant(
+        assistantMessage.id,
+        trimmed,
+        text,
+        nextMessages,
+        pendingAttachments,
+        { applyMode: mode }
+      );
       setLoading(false);
     },
     [loading, persistSession, prepareContext, requestAssistant]
@@ -807,6 +998,37 @@ export function useChat(settings: AppSettings) {
     [flushCurrentSession, loading]
   );
 
+  const exportSessions = useCallback(async () => {
+    await flushCurrentSession();
+    await exportAllSessionsToFile();
+    onNotifyRef.current?.("会话已导出");
+  }, [flushCurrentSession]);
+
+  const importSessions = useCallback(
+    async (file: File) => {
+      if (loading) return "正在生成回复，请稍后再导入";
+
+      await flushCurrentSession();
+      try {
+        const result = await importSessionsFromFile(file);
+        applyStore(result.store);
+        const parts = [`已合并导入 ${result.importedCount} 个会话`];
+        if (result.renamedCount > 0) {
+          parts.push(`${result.renamedCount} 个重名会话已自动改名`);
+        }
+        if (result.skippedCount > 0) {
+          parts.push(`${result.skippedCount} 个重复会话已跳过`);
+        }
+        onNotifyRef.current?.(parts.join("，"));
+        return null;
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "导入失败";
+        return message;
+      }
+    },
+    [applyStore, flushCurrentSession, loading]
+  );
+
   const messages = session?.messages ?? [];
 
   return {
@@ -816,6 +1038,7 @@ export function useChat(settings: AppSettings) {
     loading,
     applyMode,
     editingMessageId,
+    contextUsage,
     sendMessage,
     runAction,
     runDirectAction,
@@ -824,10 +1047,13 @@ export function useChat(settings: AppSettings) {
     startEditMessage,
     cancelEditMessage,
     deleteMessage,
+    stopGeneration,
     switchSession,
     renameSession,
     reorderSessions,
     deleteSession,
+    exportSessions,
+    importSessions,
     newConversation,
     hasMessages: messages.length > 0,
   };

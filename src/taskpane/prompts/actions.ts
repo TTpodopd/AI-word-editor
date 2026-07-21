@@ -42,6 +42,14 @@ export const ACTION_PROMPTS: ActionPrompt[] = [
     userPromptTemplate: (text) => `请润色以下文本：\n\n${text}`,
   },
   {
+    id: "proofread",
+    label: "校对",
+    slashCommand: "/校对",
+    systemPrompt:
+      "你是一位专业的文字校对助手。请对用户提供的文本进行校对，仅修正标点符号错误和错字（含同音字、形近字误用）。必须保留原文用词、句式、段落结构和事实内容，不得改写、润色、增删或重组句子。如无错误则原样输出。直接输出校对后的文本，不要解释修改过程，不要标注修改说明。",
+    userPromptTemplate: (text) => `请校对以下文本，仅修正标点符号和错字：\n\n${text}`,
+  },
+  {
     id: "translate",
     label: "翻译",
     slashCommand: "/翻译",
