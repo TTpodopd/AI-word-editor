@@ -44,7 +44,7 @@ export function QuickCommandsPanel({ hasSelection, disabled, onNotify }: QuickCo
     "doc-toc": false,
     "doc-page": false,
     "doc-headerFooter": false,
-    "doc-cleanup": true,
+    "doc-cleanup": false,
     "doc-format": false,
   });
 
