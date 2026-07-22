@@ -27,6 +27,34 @@ function referenceContains(referenceText: string, pattern: RegExp): boolean {
   return pattern.test(referenceText);
 }
 
+const GREEK_LETTERS = "Α-Ωα-ω";
+const VARIABLE_LETTER = `[A-Za-z${GREEK_LETTERS}]`;
+const VARIABLE_TOKEN_START = new RegExp(
+  `(?<![A-Za-z0-9${GREEK_LETTERS}])_(${VARIABLE_LETTER})(?=[\\-({\\d]|$)`,
+  "gu"
+);
+const ORPHAN_TRAILING_EMPHASIS = /(?<=[\d)）])_(?=\s|$|[，。；：、])/g;
+const ORPHAN_LEADING_ASTERISK = new RegExp(
+  `(?<![A-Za-z0-9*${GREEK_LETTERS}])\\*(${VARIABLE_LETTER})(?=[\\-({\\d]|$)`,
+  "gu"
+);
+
+/** AI 常输出未闭合的 _z-i、_ρ-i 等 Markdown 斜体，写入 Word 前去掉多余标记。 */
+function stripOrphanMarkdownEmphasis(text: string, referenceText: string): string {
+  const ref = referenceText.trim();
+  if (
+    referenceContains(ref, VARIABLE_TOKEN_START) ||
+    referenceContains(ref, ORPHAN_LEADING_ASTERISK)
+  ) {
+    return text;
+  }
+
+  let result = text.replace(VARIABLE_TOKEN_START, "$1");
+  result = result.replace(ORPHAN_LEADING_ASTERISK, "$1");
+  result = result.replace(ORPHAN_TRAILING_EMPHASIS, "");
+  return result;
+}
+
 /**
  * 根据 Word 原文风格，去除 AI 输出中多余的 Markdown / 标记符号。
  * referenceText 为空时，按纯文本 Word 文档默认清理常见标记。
@@ -100,6 +128,8 @@ export function sanitizeTextForWord(text: string, referenceText = ""): string {
 
   result = result.replace(/^-{3,}$/gm, "");
   result = result.replace(/^\*{3,}$/gm, "");
+
+  result = stripOrphanMarkdownEmphasis(result, ref);
 
   return normalizeAssistantContent(result);
 }
