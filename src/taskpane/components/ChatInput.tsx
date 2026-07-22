@@ -23,6 +23,7 @@ import {
 } from "../services/attachmentService";
 import { insertLatexFormula, captureSelection, clearTrackedRange, readDocumentTextForAttachment } from "../services/wordService";
 import { extractLatexPreset, looksLikeLatex } from "../utils/latexOoxml";
+import { runDocumentTool } from "../services/documentToolsService";
 
 
 
@@ -88,6 +89,27 @@ function FormulaIcon() {
   );
 }
 
+function AcademicVariableIcon() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <path
+        d="M4.2 3h6.1M7.8 3L5.5 11.2c-.25.9-.7 1.35-1.45 1.35-.4 0-.75-.12-1.05-.35"
+        stroke="currentColor"
+        strokeWidth="1.35"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <path
+        d="M9.2 9.2h2.15l-2.7 3.3h2.45"
+        stroke="currentColor"
+        strokeWidth="1.1"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
 function QuoteIcon() {
   return (
     <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
@@ -143,9 +165,11 @@ export function ChatInput({
   const [latexDialogOpen, setLatexDialogOpen] = useState(false);
   const [latexDialogPreset, setLatexDialogPreset] = useState({ latex: "", displayMode: false });
   const [latexReplaceMode, setLatexReplaceMode] = useState(false);
+  const [formattingAcademicVariables, setFormattingAcademicVariables] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const isComposingRef = useRef(false);
+  const sendingRef = useRef(false);
   const { height: inputHeight, resizing, handleResizeStart } = useResizableInputHeight();
 
   const showSlashMenu = input.startsWith("/");
@@ -314,49 +338,61 @@ export function ChatInput({
     }
   };
 
+  const handleFormatAcademicVariables = async () => {
+    if (!hasSelection) {
+      notifyError("请先在 Word 中选中包含变量字母的段落");
+      return;
+    }
+
+    setFormattingAcademicVariables(true);
+    try {
+      const result = await runDocumentTool("format-academic-variables");
+      if (result.success) {
+        onNotify?.(result.message || "段落字母排版优化已完成");
+      } else {
+        notifyError(result.error || "段落字母排版优化失败");
+      }
+    } catch (error) {
+      notifyError(error instanceof Error ? error.message : "段落字母排版优化失败");
+    } finally {
+      setFormattingAcademicVariables(false);
+    }
+  };
+
   const handleSend = async () => {
     const trimmed = getTextareaValue().trim();
 
-    if (!canSend) return;
-
-
+    if (!canSend || sendingRef.current) return;
 
     const visionError = validateVisionModel(attachments);
 
     if (visionError) {
-
       notifyError(visionError);
-
       return;
-
     }
 
+    sendingRef.current = true;
+    try {
+      const matchedAction = getActionBySlashCommand(trimmed, selectionText, hasSelection);
 
-
-    const matchedAction = getActionBySlashCommand(trimmed, selectionText, hasSelection);
-
-    if (matchedAction) {
-      if (hasSelection) {
-        onSlashAction(matchedAction.id);
+      if (matchedAction) {
+        if (hasSelection) {
+          onSlashAction(matchedAction.id);
+        } else {
+          const error = await onSend(`请${matchedAction.label}一段适合放入 Word 文档的内容`, attachments);
+          if (error) notifyError(error);
+        }
       } else {
-        const error = await onSend(`请${matchedAction.label}一段适合放入 Word 文档的内容`, attachments);
+        const error = await onSend(trimmed, attachments);
         if (error) notifyError(error);
       }
-    } else {
 
-      const error = await onSend(trimmed, attachments);
-
-      if (error) notifyError(error);
-
+      setInput("");
+      if (textareaRef.current) textareaRef.current.value = "";
+      setAttachments([]);
+    } finally {
+      sendingRef.current = false;
     }
-
-
-
-    setInput("");
-
-    if (textareaRef.current) textareaRef.current.value = "";
-
-    setAttachments([]);
   };
 
 
@@ -543,6 +579,19 @@ export function ChatInput({
             title="插入 LaTeX 公式"
           >
             <FormulaIcon />
+          </button>
+          <button
+            type="button"
+            className="upload-btn"
+            onClick={() => void handleFormatAcademicVariables()}
+            disabled={disabled || uploading || formattingAcademicVariables || !hasSelection}
+            title={
+              hasSelection
+                ? "优化选中段落的变量字母排版"
+                : "请先选中包含变量字母的段落"
+            }
+          >
+            <AcademicVariableIcon />
           </button>
           <button
             className="send-btn"

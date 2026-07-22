@@ -32,7 +32,7 @@ export function AppViewTabs({ view, disabled, onChange }: AppViewTabsProps) {
         disabled={disabled}
         onClick={() => onChange("tools")}
       >
-        工具
+        快捷指令
       </button>
     </div>
   );

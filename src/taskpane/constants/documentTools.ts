@@ -30,6 +30,17 @@ export interface DocumentTool {
   actionLabel?: string;
 }
 
+/** 附属操作（清除/更新等）挂在主工具按钮旁，不再单独占卡片 */
+export const DOCUMENT_TOOL_COMPANIONS: Record<string, string> = {
+  "insert-toc": "update-toc",
+  "insert-page-number": "clear-page-numbers",
+  "set-header": "clear-header",
+  "set-footer-text": "clear-footer",
+  "indent-first-line": "clear-first-line-indent",
+};
+
+const COMPANION_TOOL_IDS = new Set(Object.values(DOCUMENT_TOOL_COMPANIONS));
+
 const OUTLINE_LEVEL_OPTIONS: ToolFieldOption[] = [
   { value: "1", label: "1 级" },
   { value: "2", label: "2 级" },
@@ -336,10 +347,61 @@ export const DOCUMENT_TOOLS: DocumentTool[] = [
     category: "format",
     actionLabel: "清除",
   },
+  {
+    id: "uniform-line-spacing",
+    label: "统一行距",
+    description: "批量设置段落行距，支持倍距与固定磅值",
+    scope: "document",
+    category: "format",
+    actionLabel: "应用",
+    fields: [
+      {
+        key: "lineSpacingPreset",
+        label: "行距",
+        type: "select",
+        defaultValue: "1.5",
+        options: [
+          { value: "single", label: "单倍行距" },
+          { value: "1.5", label: "1.5 倍行距" },
+          { value: "2", label: "2 倍行距" },
+          { value: "fixed20", label: "固定 20 磅" },
+          { value: "fixed22", label: "固定 22 磅" },
+          { value: "fixed24", label: "固定 24 磅" },
+        ],
+      },
+      {
+        key: "applyScope",
+        label: "范围",
+        type: "select",
+        defaultValue: "document",
+        options: [
+          { value: "document", label: "全文" },
+          { value: "selection", label: "选区" },
+        ],
+      },
+    ],
+  },
 ];
 
 export function getDocumentToolById(id: string): DocumentTool | undefined {
   return DOCUMENT_TOOLS.find((tool) => tool.id === id);
+}
+
+export function getCompanionTool(primaryTool: DocumentTool): DocumentTool | undefined {
+  const companionId = DOCUMENT_TOOL_COMPANIONS[primaryTool.id];
+  return companionId ? getDocumentToolById(companionId) : undefined;
+}
+
+export function isCompanionOnlyTool(tool: DocumentTool): boolean {
+  return COMPANION_TOOL_IDS.has(tool.id);
+}
+
+export function getPrimaryToolsForCategory(category: DocumentToolCategory): DocumentTool[] {
+  return DOCUMENT_TOOLS.filter((tool) => tool.category === category && !isCompanionOnlyTool(tool));
+}
+
+export function countPrimaryToolsForCategory(category: DocumentToolCategory): number {
+  return getPrimaryToolsForCategory(category).length;
 }
 
 export function buildDefaultToolFieldValues(): Record<string, Record<string, string>> {

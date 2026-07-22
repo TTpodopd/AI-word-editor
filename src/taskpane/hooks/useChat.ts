@@ -113,6 +113,7 @@ export function useChat(
   const abortControllerRef = useRef<AbortController | null>(null);
   const activeAssistantIdRef = useRef<string | null>(null);
   const generationStoppedRef = useRef(false);
+  const requestInFlightRef = useRef(false);
   const onNotifyRef = useRef(options?.onNotify);
   const hasSelectionRef = useRef(options?.hasSelection ?? false);
 
@@ -365,7 +366,11 @@ export function useChat(
         searchInfo?: MessageSearchInfo;
       } = {}
     ) => {
-      const signal = abortControllerRef.current?.signal ?? startGeneration(assistantId);
+      if (generationStoppedRef.current) {
+        return;
+      }
+
+      const signal = startGeneration(assistantId);
 
       const response = await sendChatStreamWithModel(model, apiMessages, {
         signal,
@@ -381,11 +386,22 @@ export function useChat(
       const wasStopped = generationStoppedRef.current;
       endGeneration();
 
-      if (wasStopped) {
+      if (wasStopped || response.aborted) {
+        const current = sessionRef.current;
+        const message = current?.messages.find((item) => item.id === assistantId);
+        const partialContent = message?.content.trim() || "";
+        await updateMessage(assistantId, {
+          status: "done",
+          content: partialContent || "（已停止生成）",
+          applyMode: meta.applyMode ?? "insert",
+          sourceText: meta.sourceText,
+          actionLabel: meta.actionLabel,
+          searchInfo: meta.searchInfo,
+        });
         return;
       }
 
-      if (response.error && !response.aborted) {
+      if (response.error) {
         await updateMessage(assistantId, {
           status: "error",
           error: response.error,
@@ -400,9 +416,7 @@ export function useChat(
         extractAssistantResultText(normalized),
         meta.sourceText || ""
       );
-      const finalContent =
-        prepared.trim() ||
-        (response.aborted ? "（已停止生成）" : meta.sourceText || "");
+      const finalContent = prepared.trim() || meta.sourceText || "";
 
       await updateMessage(assistantId, {
         status: "done",
@@ -448,9 +462,8 @@ export function useChat(
         return;
       }
 
-      startGeneration(assistantId);
-      const signal = abortControllerRef.current?.signal;
-      if (!signal || generationStoppedRef.current) return;
+      activeAssistantIdRef.current = assistantId;
+      generationStoppedRef.current = false;
 
       const historyBeforeCurrent = priorMessages.filter((m) => m.id !== assistantId);
       const priorDone = historyBeforeCurrent.filter(
@@ -480,11 +493,13 @@ export function useChat(
         await augmentMessagesWithWebSearch(
           budgetMessages,
           userContent,
-          latestSettings.webSearch,
-          signal
+          latestSettings.webSearch
         );
 
-      if (generationStoppedRef.current) return;
+      if (generationStoppedRef.current) {
+        activeAssistantIdRef.current = null;
+        return;
+      }
 
       const searchInfo = buildSearchInfo(searchQuery, searchResults, searchError);
       if (searchInfo) {
@@ -498,21 +513,26 @@ export function useChat(
         searchInfo,
       });
       syncContextUsageFromApiMessages(finalMessages);
+      activeAssistantIdRef.current = null;
     },
-    [getCurrentModel, getLatestSettings, patchMessageLocal, startGeneration, streamAssistantResponse, syncContextUsageFromApiMessages, updateMessage]
+    [getCurrentModel, getLatestSettings, patchMessageLocal, streamAssistantResponse, syncContextUsageFromApiMessages, updateMessage]
   );
 
   const sendMessage = useCallback(
     async (content: string, selectedText?: string, attachments: PendingAttachment[] = []) => {
       const trimmed = content.trim();
-      if ((!trimmed && attachments.length === 0) || loading) return null;
+      if ((!trimmed && attachments.length === 0) || loading || requestInFlightRef.current) {
+        return null;
+      }
 
       const model = getCurrentModel();
       if (hasImageAttachments(attachments) && model && !modelSupportsVision(model)) {
         return `当前模型（${model.label}）不支持图片分析，请切换到 GPT-4o 等视觉模型`;
       }
 
+      requestInFlightRef.current = true;
       setLoading(true);
+      try {
       const contextResult = await prepareContext(selectedText);
       const text = contextResult.text;
       const mode = contextResult.applyMode;
@@ -548,15 +568,18 @@ export function useChat(
         attachments
       );
 
-      setLoading(false);
       return null;
+      } finally {
+        requestInFlightRef.current = false;
+        setLoading(false);
+      }
     },
     [getCurrentModel, loading, persistSession, prepareContext, requestAssistant]
   );
 
   const runDirectAction = useCallback(
     async (actionId: ActionType, selectedText?: string): Promise<string | null> => {
-      if (loading) return "正在处理中，请稍候";
+      if (loading || requestInFlightRef.current) return "正在处理中，请稍候";
 
       const action = getActionById(actionId);
       if (!action) return null;
@@ -572,6 +595,7 @@ export function useChat(
         return "请先在设置中选择并配置模型";
       }
 
+      requestInFlightRef.current = true;
       setLoading(true);
       try {
         const latestSettings = await getLatestSettings();
@@ -595,6 +619,7 @@ export function useChat(
         return null;
       } finally {
         endRequest();
+        requestInFlightRef.current = false;
         setLoading(false);
       }
     },
@@ -603,7 +628,7 @@ export function useChat(
 
   const runAction = useCallback(
     async (actionId: ActionType, selectedText?: string) => {
-      if (loading) return;
+      if (loading || requestInFlightRef.current) return;
 
       const action = getActionById(actionId);
       if (!action) return;
@@ -624,6 +649,7 @@ export function useChat(
         return;
       }
 
+      requestInFlightRef.current = true;
       setLoading(true);
       const isCodeEditAction = action.id !== "explainCode";
       setApplyMode(isCodeEditAction ? "replace" : "insert");
@@ -653,33 +679,39 @@ export function useChat(
       await persistSession({ ...current, messages: nextMessages });
 
       const model = getCurrentModel();
-      if (!model) {
-        await updateMessage(assistantMessage.id, {
-          status: "error",
-          error: "请先在设置中选择并配置模型",
-        });
-        setLoading(false);
-        return;
-      }
+      try {
+        if (!model) {
+          await updateMessage(assistantMessage.id, {
+            status: "error",
+            error: "请先在设置中选择并配置模型",
+          });
+          return;
+        }
 
-      const latestSettings = await getLatestSettings();
-      const apiMessages = buildMessages(action, text, latestSettings);
-      startGeneration(assistantMessage.id);
-      await streamAssistantResponse(assistantMessage.id, model, apiMessages, {
-        applyMode: isCodeEditAction ? "replace" : "insert",
-        sourceText: isCodeEditAction ? text : undefined,
-        actionLabel: action.label,
-      });
-      syncContextUsageFromApiMessages(apiMessages);
-      setLoading(false);
+        activeAssistantIdRef.current = assistantMessage.id;
+        generationStoppedRef.current = false;
+
+        const latestSettings = await getLatestSettings();
+        const apiMessages = buildMessages(action, text, latestSettings);
+        await streamAssistantResponse(assistantMessage.id, model, apiMessages, {
+          applyMode: isCodeEditAction ? "replace" : "insert",
+          sourceText: isCodeEditAction ? text : undefined,
+          actionLabel: action.label,
+        });
+        syncContextUsageFromApiMessages(apiMessages);
+      } finally {
+        activeAssistantIdRef.current = null;
+        requestInFlightRef.current = false;
+        setLoading(false);
+      }
     },
-    [getCurrentModel, getLatestSettings, loading, persistSession, startGeneration, streamAssistantResponse, syncContextUsageFromApiMessages, updateMessage]
+    [getCurrentModel, getLatestSettings, loading, persistSession, streamAssistantResponse, syncContextUsageFromApiMessages, updateMessage]
   );
 
   const regenerateMessage = useCallback(
     async (assistantId: string) => {
       const current = sessionRef.current;
-      if (!current || loading) return;
+      if (!current || loading || requestInFlightRef.current) return;
 
       const assistantIndex = current.messages.findIndex((m) => m.id === assistantId);
       if (assistantIndex <= 0) return;
@@ -690,35 +722,40 @@ export function useChat(
         .find((m) => m.role === "user");
       if (!userMessage) return;
 
+      requestInFlightRef.current = true;
       setLoading(true);
-      await updateMessage(assistantId, {
-        content: "",
-        status: "loading",
-        error: undefined,
-        searchInfo: undefined,
-      });
+      try {
+        await updateMessage(assistantId, {
+          content: "",
+          status: "loading",
+          error: undefined,
+          searchInfo: undefined,
+        });
 
-      const assistantMessage = current.messages[assistantIndex];
-      let text = assistantMessage.sourceText?.trim() || "";
-      if (!text) {
-        const context = await prepareContext();
-        text = context.text;
-      }
-
-      const pendingAttachments = messageAttachmentsToPending(userMessage.attachments);
-      await requestAssistant(
-        assistantId,
-        userMessage.content,
-        text,
-        current.messages,
-        pendingAttachments,
-        {
-          applyMode: assistantMessage.applyMode,
-          sourceText: assistantMessage.sourceText,
-          actionLabel: assistantMessage.actionLabel,
+        const assistantMessage = current.messages[assistantIndex];
+        let text = assistantMessage.sourceText?.trim() || "";
+        if (!text) {
+          const context = await prepareContext();
+          text = context.text;
         }
-      );
-      setLoading(false);
+
+        const pendingAttachments = messageAttachmentsToPending(userMessage.attachments);
+        await requestAssistant(
+          assistantId,
+          userMessage.content,
+          text,
+          current.messages,
+          pendingAttachments,
+          {
+            applyMode: assistantMessage.applyMode,
+            sourceText: assistantMessage.sourceText,
+            actionLabel: assistantMessage.actionLabel,
+          }
+        );
+      } finally {
+        requestInFlightRef.current = false;
+        setLoading(false);
+      }
     },
     [loading, prepareContext, requestAssistant, updateMessage]
   );
@@ -772,7 +809,7 @@ export function useChat(
   const editAndResend = useCallback(
     async (messageId: string, newContent: string, selectedText?: string) => {
       const trimmed = newContent.trim();
-      if (!trimmed || loading) return;
+      if (!trimmed || loading || requestInFlightRef.current) return;
 
       const current = sessionRef.current;
       if (!current) return;
@@ -781,41 +818,45 @@ export function useChat(
       if (msgIndex < 0 || current.messages[msgIndex].role !== "user") return;
 
       setEditingMessageId(null);
+      requestInFlightRef.current = true;
       setLoading(true);
+      try {
+        const { text, applyMode: mode } = await prepareContext(selectedText);
 
-      const { text, applyMode: mode } = await prepareContext(selectedText);
+        const originalUser = current.messages[msgIndex];
+        const kept = current.messages.slice(0, msgIndex);
+        const updatedUser: UIMessage = {
+          ...originalUser,
+          content: trimmed,
+          timestamp: Date.now(),
+          status: "done",
+        };
 
-      const originalUser = current.messages[msgIndex];
-      const kept = current.messages.slice(0, msgIndex);
-      const updatedUser: UIMessage = {
-        ...originalUser,
-        content: trimmed,
-        timestamp: Date.now(),
-        status: "done",
-      };
+        const assistantMessage: UIMessage = {
+          id: createId(),
+          role: "assistant",
+          content: "",
+          timestamp: Date.now(),
+          status: "loading",
+          applyMode: mode,
+        };
 
-      const assistantMessage: UIMessage = {
-        id: createId(),
-        role: "assistant",
-        content: "",
-        timestamp: Date.now(),
-        status: "loading",
-        applyMode: mode,
-      };
+        const nextMessages = [...kept, updatedUser, assistantMessage];
+        await persistSession({ ...current, messages: nextMessages });
 
-      const nextMessages = [...kept, updatedUser, assistantMessage];
-      await persistSession({ ...current, messages: nextMessages });
-
-      const pendingAttachments = messageAttachmentsToPending(originalUser.attachments);
-      await requestAssistant(
-        assistantMessage.id,
-        trimmed,
-        text,
-        nextMessages,
-        pendingAttachments,
-        { applyMode: mode }
-      );
-      setLoading(false);
+        const pendingAttachments = messageAttachmentsToPending(originalUser.attachments);
+        await requestAssistant(
+          assistantMessage.id,
+          trimmed,
+          text,
+          nextMessages,
+          pendingAttachments,
+          { applyMode: mode }
+        );
+      } finally {
+        requestInFlightRef.current = false;
+        setLoading(false);
+      }
     },
     [loading, persistSession, prepareContext, requestAssistant]
   );

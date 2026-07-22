@@ -5,7 +5,7 @@ import { SettingsPanel } from "./components/SettingsPanel";
 import { SettingsHeader } from "./components/SettingsHeader";
 import { SelectionBar } from "./components/SelectionBar";
 import { AppViewTabs } from "./components/AppViewTabs";
-import { DocumentToolsPanel } from "./components/DocumentToolsPanel";
+import { QuickCommandsPanel } from "./components/QuickCommandsPanel";
 import { WritingAssistantPanel } from "./components/WritingAssistantPanel";
 import { useSelection } from "./hooks/useSelection";
 import { useViewportScale } from "./hooks/useViewportScale";
@@ -316,8 +316,8 @@ export function App() {
               />
             </main>
           ) : view === "tools" ? (
-            <main className="writing-main document-tools-main">
-              <DocumentToolsPanel
+            <main className="writing-main quick-commands-main">
+              <QuickCommandsPanel
                 hasSelection={selection.hasSelection}
                 disabled={loading}
                 onNotify={showToast}

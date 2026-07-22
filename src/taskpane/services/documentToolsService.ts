@@ -1,6 +1,7 @@
 /* global Word */
 
 import { localizeErrorMessage } from "../utils/localizeErrorMessage";
+import { patchAcademicVariablesInOoxml } from "../utils/academicVariableOoxml";
 
 export interface DocumentToolResult {
   success: boolean;
@@ -23,6 +24,7 @@ export interface DocumentToolOptions {
   indentChars?: number;
   applyScope?: "document" | "selection";
   outlineLevel?: number | "bodyText";
+  lineSpacingPreset?: "single" | "1.5" | "2" | "fixed20" | "fixed22" | "fixed24";
 }
 
 function clampOutlineLevel(value: number | undefined): 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 {
@@ -1050,6 +1052,126 @@ async function trimExtraSpaces(useSelection: boolean): Promise<DocumentToolResul
   }
 }
 
+async function formatAcademicVariables(): Promise<DocumentToolResult> {
+  try {
+    return await Word.run(async (context) => {
+      const selection = context.document.getSelection();
+      selection.load("isEmpty,text");
+      const ooxmlResult = selection.getOoxml();
+      await context.sync();
+
+      if (selection.isEmpty || !selection.text?.trim()) {
+        return fail("请先选中包含变量字母的段落");
+      }
+
+      const patched = patchAcademicVariablesInOoxml(ooxmlResult.value);
+      if (patched.error) {
+        return fail(patched.error);
+      }
+      if (patched.convertedCount === 0) {
+        return ok("未识别到可优化的变量字母；仅处理独立字母及 R_s、w_i 等下标写法");
+      }
+
+      selection.insertOoxml(patched.ooxml, Word.InsertLocation.replace);
+      await context.sync();
+      return ok(`已将 ${patched.convertedCount} 处变量转换为 Word 学术数学格式`);
+    });
+  } catch (err) {
+    return wrapError(err, "段落字母排版优化失败");
+  }
+}
+
+type LineSpacingPreset = NonNullable<DocumentToolOptions["lineSpacingPreset"]>;
+
+function getLineSpacingConfig(preset: LineSpacingPreset | undefined): {
+  line: number;
+  rule: "auto" | "exact";
+  label: string;
+} {
+  switch (preset) {
+    case "single":
+      return { line: 240, rule: "auto", label: "单倍行距" };
+    case "1.5":
+      return { line: 360, rule: "auto", label: "1.5 倍行距" };
+    case "2":
+      return { line: 480, rule: "auto", label: "2 倍行距" };
+    case "fixed20":
+      return { line: 400, rule: "exact", label: "固定 20 磅" };
+    case "fixed22":
+      return { line: 440, rule: "exact", label: "固定 22 磅" };
+    case "fixed24":
+      return { line: 480, rule: "exact", label: "固定 24 磅" };
+    default:
+      return { line: 360, rule: "auto", label: "1.5 倍行距" };
+  }
+}
+
+function patchParagraphLineSpacingOoxml(
+  ooxml: string,
+  line: number,
+  rule: "auto" | "exact"
+): string {
+  const spacing = `<w:spacing w:line="${line}" w:lineRule="${rule}"/>`;
+  if (/<w:spacing\b/.test(ooxml)) {
+    return ooxml
+      .replace(/<w:spacing\b[^>]*\/>/g, spacing)
+      .replace(/<w:spacing\b[^>]*>[\s\S]*?<\/w:spacing>/g, spacing);
+  }
+  if (/<w:pPr\b/.test(ooxml)) {
+    return ooxml.replace(/<w:pPr\b([^>]*)>/, `<w:pPr$1>${spacing}`);
+  }
+  return ooxml.replace(/<w:p\b([^>]*)>/, `<w:p$1><w:pPr>${spacing}</w:pPr>`);
+}
+
+async function setUniformLineSpacing(
+  useSelection: boolean,
+  preset: LineSpacingPreset | undefined
+): Promise<DocumentToolResult> {
+  const config = getLineSpacingConfig(preset);
+
+  try {
+    return await Word.run(async (context) => {
+      const target = useSelection ? context.document.getSelection() : context.document.body;
+      const paragraphs = target.paragraphs;
+      paragraphs.load("items");
+      await context.sync();
+
+      for (const paragraph of paragraphs.items) {
+        paragraph.load("text");
+      }
+      await context.sync();
+
+      let changed = 0;
+      const ooxmlCache = new Map<number, string | undefined>();
+
+      for (let index = 0; index < paragraphs.items.length; index += 1) {
+        const paragraph = paragraphs.items[index];
+        const text = paragraph.text?.replace(/\r/g, "").trim() ?? "";
+        if (!text) continue;
+
+        const ooxml = await loadParagraphOoxml(context, paragraph, ooxmlCache, index);
+        if (!ooxml) continue;
+
+        const patched = patchParagraphLineSpacingOoxml(ooxml, config.line, config.rule);
+        try {
+          paragraph.insertOoxml(patched, Word.InsertLocation.replace);
+          await context.sync();
+          changed += 1;
+        } catch {
+          // OOXML 替换失败时跳过该段落。
+        }
+      }
+
+      if (changed === 0) {
+        return ok(useSelection ? "选区内未找到可设置行距的段落" : "未找到可设置行距的段落");
+      }
+      return ok(`已为 ${changed} 个段落设置${config.label}`);
+    });
+  } catch (err) {
+    return wrapError(err, "设置行距失败");
+  }
+}
+
 async function setFirstLineIndent(enable: boolean, indentChars = 2): Promise<DocumentToolResult> {
   try {
     return await Word.run(async (context) => {
@@ -1229,11 +1351,20 @@ export async function runDocumentTool(
     case "set-heading-level":
       return setSelectionOutlineLevel(options.outlineLevel ?? 1);
 
+    case "format-academic-variables":
+      return formatAcademicVariables();
+
     case "indent-first-line":
       return setFirstLineIndent(true, options.indentChars ?? 2);
 
     case "clear-first-line-indent":
       return setFirstLineIndent(false);
+
+    case "uniform-line-spacing":
+      return setUniformLineSpacing(
+        resolveApplyScope(options),
+        options.lineSpacingPreset ?? "1.5"
+      );
 
     default:
       return fail("未知工具");
@@ -1258,6 +1389,7 @@ export function buildDocumentToolOptions(
     pageNumberStart: Number(fieldValues.pageNumberStart) || 1,
     indentChars: Number(fieldValues.indentChars) || 2,
     applyScope: fieldValues.applyScope as DocumentToolOptions["applyScope"],
+    lineSpacingPreset: fieldValues.lineSpacingPreset as DocumentToolOptions["lineSpacingPreset"],
     outlineLevel:
       fieldValues.outlineLevel === "bodyText"
         ? "bodyText"

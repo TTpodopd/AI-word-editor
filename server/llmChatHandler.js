@@ -160,6 +160,18 @@ async function pipeUpstreamStream(upstream, res) {
   res.end();
 }
 
+const UPSTREAM_TIMEOUT_MS = 120000;
+
+function attachClientAbortHandler(req, res, abort) {
+  const maybeAbort = () => {
+    if (res.writableEnded || res.writableFinished) return;
+    abort();
+  };
+
+  res.on("close", maybeAbort);
+  req.on("aborted", maybeAbort);
+}
+
 async function executeLlmChat(body, headers, res, options = {}) {
   const { provider, model, messages, apiBaseUrl, stream } = body || {};
   const apiKey = headers["x-api-key"];
@@ -184,6 +196,7 @@ async function executeLlmChat(body, headers, res, options = {}) {
   );
 
   const controller = new AbortController();
+  const upstreamTimeout = setTimeout(() => controller.abort(), UPSTREAM_TIMEOUT_MS);
   if (typeof onClientClose === "function") {
     onClientClose(() => controller.abort());
   }
@@ -248,14 +261,15 @@ async function executeLlmChat(body, headers, res, options = {}) {
     }
 
     return res.status(500).json({ error: message });
+  } finally {
+    clearTimeout(upstreamTimeout);
   }
 }
 
 function handleLlmChatRoute(req, res) {
   return executeLlmChat(req.body, req.headers, res, {
     onClientClose: (abort) => {
-      req.on("close", abort);
-      req.on("aborted", abort);
+      attachClientAbortHandler(req, res, abort);
     },
   });
 }
