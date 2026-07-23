@@ -19,7 +19,11 @@ import { applyThemeColor } from "./utils/theme";
 import { localizeErrorMessage } from "./utils/localizeErrorMessage";
 import { detectSelectionContentKind } from "./utils/selectionContentType";
 
-export function App() {
+interface AppProps {
+  showBrowserPreviewHint?: boolean;
+}
+
+export function App({ showBrowserPreviewHint = false }: AppProps) {
   const [view, setView] = useState<AppView>("chat");
   const [settings, setSettings] = useState<AppSettings>(DEFAULT_SETTINGS);
   const [toast, setToast] = useState("");
@@ -285,6 +289,11 @@ export function App() {
 
   return (
     <div className="app-container chat-layout">
+      {showBrowserPreviewHint && (
+        <div className="browser-preview-hint">
+          浏览器预览模式：选区读写等 Word 功能不可用，请在 Word「开始 → AI编辑助手」中正式使用。
+        </div>
+      )}
       {view === "settings" ? (
         <>
           <SettingsHeader

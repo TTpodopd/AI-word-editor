@@ -139,11 +139,13 @@ interface PageNumberInsertOptions {
   startNumber: number;
 }
 
-const FOOTER_TYPES: Word.HeaderFooterType[] = [
-  Word.HeaderFooterType.primary,
-  Word.HeaderFooterType.evenPages,
-  Word.HeaderFooterType.firstPage,
-];
+function getFooterTypes(): Word.HeaderFooterType[] {
+  return [
+    Word.HeaderFooterType.primary,
+    Word.HeaderFooterType.evenPages,
+    Word.HeaderFooterType.firstPage,
+  ];
+}
 
 const W_NS = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
 const LEGACY_BODY_BOOKMARK = "_AiEditorBodyStart";
@@ -383,7 +385,7 @@ function buildPageFooterOoxml(align: Word.Alignment, format: PageNumberFormat): 
 }
 
 async function unlinkSectionFooters(section: Word.Section): Promise<void> {
-  for (const type of FOOTER_TYPES) {
+  for (const type of getFooterTypes()) {
     try {
       const footer = section.getFooter(type);
       footer.insertText("\u200B", Word.InsertLocation.end);
@@ -481,7 +483,7 @@ async function writePageNumberToFooter(
 }
 
 async function updateSectionFooterFields(section: Word.Section): Promise<void> {
-  for (const type of FOOTER_TYPES) {
+  for (const type of getFooterTypes()) {
     try {
       const footer = section.getFooter(type);
       const fields = footer.fields;
@@ -498,7 +500,7 @@ async function updateSectionFooterFields(section: Word.Section): Promise<void> {
 }
 
 async function clearSectionFooters(section: Word.Section): Promise<void> {
-  for (const type of FOOTER_TYPES) {
+  for (const type of getFooterTypes()) {
     try {
       const footer = section.getFooter(type);
       await clearBodyParagraphs(footer);

@@ -240,9 +240,15 @@ export function hasTrackedRange(): boolean {
 }
 
 const HEADING_STYLE_MAP: Record<1 | 2 | 3, Word.BuiltInStyleName> = {
-  1: Word.BuiltInStyleName.heading1,
-  2: Word.BuiltInStyleName.heading2,
-  3: Word.BuiltInStyleName.heading3,
+  get 1() {
+    return Word.BuiltInStyleName.heading1;
+  },
+  get 2() {
+    return Word.BuiltInStyleName.heading2;
+  },
+  get 3() {
+    return Word.BuiltInStyleName.heading3;
+  },
 };
 
 function getHeadingStyle(level: 1 | 2 | 3): Word.BuiltInStyleName {

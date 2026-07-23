@@ -2571,6 +2571,16 @@ body.session-dragging * {
   flex-shrink: 0;
 }
 
+.browser-preview-hint {
+  flex-shrink: 0;
+  padding: 8px 12px;
+  background: #fff7ed;
+  color: #9a3412;
+  border-bottom: 1px solid #fed7aa;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
 .chat-toast {
   position: fixed;
   bottom: 110px;
