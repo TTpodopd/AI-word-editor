@@ -12,6 +12,8 @@ interface SessionSwitcherProps {
   activeSessionId: string | null;
   disabled?: boolean;
   dropUp?: boolean;
+  triggerClassName?: string;
+  wrapperClassName?: string;
   onSwitch: (sessionId: string) => void;
   onRename?: (sessionId: string, title: string) => void;
   onReorder?: (orderedIds: string[]) => void;
@@ -25,6 +27,8 @@ export function SessionSwitcher({
   activeSessionId,
   disabled,
   dropUp,
+  triggerClassName,
+  wrapperClassName,
   onSwitch,
   onRename = () => undefined,
   onReorder = () => undefined,
@@ -275,9 +279,12 @@ export function SessionSwitcher({
   };
 
   return (
-    <div className={`session-switcher${dropUp ? " drop-up" : ""}`} ref={rootRef}>
+    <div
+      className={`session-switcher${dropUp ? " drop-up" : ""}${wrapperClassName ? ` ${wrapperClassName}` : ""}`}
+      ref={rootRef}
+    >
       <button
-        className="icon-btn"
+        className={`icon-btn${triggerClassName ? ` ${triggerClassName}` : ""}`}
         title="历史会话"
         onClick={() => setOpen((prev) => !prev)}
         disabled={disabled}

@@ -19,6 +19,8 @@ import { getInsertFirstLineIndentChars, prepareTextForWordDocument } from "./uti
 import { applyThemeColor } from "./utils/theme";
 import { localizeErrorMessage } from "./utils/localizeErrorMessage";
 import { detectSelectionContentKind } from "./utils/selectionContentType";
+import { ChatBottomActionId } from "./constants/chatBottomActions";
+import { OutputStyleId, getOutputStyleDisplay, isOutputStyleActive } from "./prompts/outputStylePresets";
 
 interface AppProps {
   showBrowserPreviewHint?: boolean;
@@ -201,6 +203,51 @@ export function App({ showBrowserPreviewHint = false }: AppProps) {
     showToast(nextEnabled ? "已开启联网搜索" : "已关闭联网搜索");
   }, [settings]);
 
+  const handleOutputStyleChange = useCallback(
+    async (styleId: OutputStyleId) => {
+      const nextSettings = { ...settings, outputStyleId: styleId };
+      setSettings(nextSettings);
+      try {
+        await saveSettings(nextSettings);
+        if (isOutputStyleActive(styleId)) {
+          showToast(`输出风格：${getOutputStyleDisplay(styleId).label}`);
+        } else {
+          showToast("已恢复默认输出");
+        }
+      } catch (err) {
+        showToast(localizeErrorMessage(err, "设置保存失败"));
+      }
+    },
+    [settings, showToast]
+  );
+
+  const handleReorderBottomActions = useCallback(
+    async (order: ChatBottomActionId[]) => {
+      const nextSettings = { ...settings, chatBottomActionOrder: order };
+      setSettings(nextSettings);
+      try {
+        await saveSettings(nextSettings);
+      } catch (err) {
+        showToast(localizeErrorMessage(err, "设置保存失败"));
+      }
+    },
+    [settings, showToast]
+  );
+
+  const handleQuickApplyChange = useCallback(
+    async (enabled: boolean) => {
+      const nextSettings = { ...settings, quickApplyEnabled: enabled };
+      setSettings(nextSettings);
+      try {
+        await saveSettings(nextSettings);
+        showToast(enabled ? "快捷操作将直接写入文档" : "快捷操作将先预览再确认");
+      } catch (err) {
+        showToast(localizeErrorMessage(err, "设置保存失败"));
+      }
+    },
+    [settings, showToast]
+  );
+
   const handleSaveSettings = useCallback(async (newSettings: AppSettings) => {
     try {
       await saveSettings(newSettings);
@@ -346,6 +393,8 @@ export function App({ showBrowserPreviewHint = false }: AppProps) {
                       onAction={handleQuickAction}
                       loading={loading}
                       compact
+                      quickApplyEnabled={!!settings.quickApplyEnabled}
+                      onQuickApplyChange={handleQuickApplyChange}
                     />
                   </div>
                 )}
@@ -354,6 +403,8 @@ export function App({ showBrowserPreviewHint = false }: AppProps) {
                   messages={messages}
                   loading={loading}
                   editingMessageId={editingMessageId}
+                  sessions={sessions}
+                  activeSessionId={activeSessionId}
                   onApply={handleApply}
                   onRegenerate={regenerateMessage}
                   onStartEdit={startEditMessage}
@@ -366,6 +417,13 @@ export function App({ showBrowserPreviewHint = false }: AppProps) {
                   hasSelection={selection.hasSelection}
                   selectionText={selection.text}
                   onWelcomeCardClick={handleWelcomeCardClick}
+                  onNewChat={handleNewChat}
+                  onSwitchSession={switchSession}
+                  onRenameSession={renameSession}
+                  onReorderSessions={reorderSessions}
+                  onDeleteSession={deleteSession}
+                  onExportSessions={handleExportSessions}
+                  onImportSessions={handleImportSessions}
                 />
               </div>
 
@@ -377,20 +435,13 @@ export function App({ showBrowserPreviewHint = false }: AppProps) {
                 selectionText={selection.text}
                 selectionCharCount={selection.charCount}
                 disabled={loading}
-                sessions={sessions}
-                activeSessionId={activeSessionId}
                 onModelChange={handleModelChange}
+                onOutputStyleChange={handleOutputStyleChange}
+                onReorderBottomActions={handleReorderBottomActions}
                 onSend={handleSend}
                 onSlashAction={handleSlashAction}
-                onNewChat={handleNewChat}
                 onOpenSettings={() => setView("settings")}
                 onToggleWebSearch={handleToggleWebSearch}
-                onSwitchSession={switchSession}
-                onRenameSession={renameSession}
-                onReorderSessions={reorderSessions}
-                onDeleteSession={deleteSession}
-                onExportSessions={handleExportSessions}
-                onImportSessions={handleImportSessions}
                 contextUsage={contextUsage}
                 onError={showToast}
                 onNotify={showToast}
@@ -405,19 +456,12 @@ export function App({ showBrowserPreviewHint = false }: AppProps) {
               <ChatInputBottomBar
                 settings={settings}
                 disabled={loading || writingBusy}
-                sessions={sessions}
-                activeSessionId={activeSessionId}
                 contextUsage={contextUsage}
                 onModelChange={handleModelChange}
-                onNewChat={handleNewChat}
+                onOutputStyleChange={handleOutputStyleChange}
+                onReorderBottomActions={handleReorderBottomActions}
                 onToggleWebSearch={handleToggleWebSearch}
                 onOpenSettings={() => setView("settings")}
-                onSwitchSession={switchSession}
-                onRenameSession={renameSession}
-                onReorderSessions={reorderSessions}
-                onDeleteSession={deleteSession}
-                onExportSessions={handleExportSessions}
-                onImportSessions={handleImportSessions}
               />
             </div>
           )}

@@ -26,6 +26,7 @@ function run(cmd, label) {
 console.log("[setup] 初始化开发环境…");
 
 run("node scripts/generate-icons.js", "生成插件图标");
+run("node scripts/setup-git-hooks.js", "配置 git hooks（commit 前更新 README）");
 
 const { freePorts } = require("./utils/ports");
 freePorts([3000, 3001], { quiet: !verbose });

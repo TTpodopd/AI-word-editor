@@ -93,6 +93,7 @@ function lighten(hex: string, amount: number): string {
 
 export function buildThemeCssVariables(accent: string): Record<string, string> {
   const { r, g, b } = parseHex(accent);
+  const iconTone = darken(accent, 18);
   return {
     "--color-accent": accent,
     "--color-accent-hover": darken(accent, 12),
@@ -110,5 +111,14 @@ export function buildThemeCssVariables(accent: string): Record<string, string> {
     "--color-cyan-end": mixWithWhite(accent, 84),
     "--color-pink-start": mixWithWhite(accent, 91),
     "--color-pink-end": mixWithWhite(accent, 82),
+    "--color-mint-start": mixWithWhite(accent, 93),
+    "--color-mint-end": mixWithWhite(accent, 86),
+    "--color-mint-surface": mixWithWhite(accent, 96),
+    "--color-mint-border": mixWithWhite(accent, 72),
+    "--color-mint-icon": iconTone,
+    "--color-mint-icon-bg": "rgba(255, 255, 255, 0.78)",
+    "--color-welcome-bg-1": mixWithWhite(accent, 97),
+    "--color-welcome-bg-2": mixWithWhite(accent, 93),
+    "--color-welcome-bg-3": mixWithWhite(accent, 96),
   };
 }

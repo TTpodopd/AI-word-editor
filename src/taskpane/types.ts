@@ -1,5 +1,9 @@
+import type { ChatBottomActionId } from "./constants/chatBottomActions";
+import { DEFAULT_CHAT_BOTTOM_ACTION_ORDER } from "./constants/chatBottomActions";
 import type { ThemeColorId } from "./constants/themeColors";
 import { DEFAULT_THEME_COLOR_ID } from "./constants/themeColors";
+import type { OutputStyleId } from "./prompts/outputStylePresets";
+import { DEFAULT_OUTPUT_STYLE_ID, appendOutputStylePrompt } from "./prompts/outputStylePresets";
 
 export type LLMProvider = "deepseek" | "openai" | "qwen" | "custom";
 
@@ -235,6 +239,10 @@ export interface AppSettings {
   customWritingTemplates?: WritingTemplate[];
   /** 已从列表隐藏的内置模板 id */
   hiddenWritingTemplateIds?: string[];
+  /** 对话输出风格 */
+  outputStyleId?: OutputStyleId;
+  /** 底部工具栏功能项顺序 */
+  chatBottomActionOrder?: ChatBottomActionId[];
 }
 
 export const BUILTIN_MODEL_OPTIONS: ModelConfig[] = [
@@ -275,6 +283,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
   quickApplyEnabled: false,
   customWritingTemplates: [],
   hiddenWritingTemplateIds: [],
+  outputStyleId: DEFAULT_OUTPUT_STYLE_ID,
+  chatBottomActionOrder: [...DEFAULT_CHAT_BOTTOM_ACTION_ORDER],
 };
 
 export const SYSTEM_PROMPT_WITH_SELECTION = DEFAULT_SYSTEM_PROMPTS.withSelection;
@@ -287,7 +297,8 @@ export function getSystemPrompt(settings: AppSettings, hasSelection: boolean): s
   const fallback = hasSelection
     ? DEFAULT_SYSTEM_PROMPTS.withSelection
     : DEFAULT_SYSTEM_PROMPTS.withoutSelection;
-  return text.trim() || fallback;
+  const base = text.trim() || fallback;
+  return appendOutputStylePrompt(base, settings.outputStyleId, hasSelection);
 }
 
 export function createId(): string {

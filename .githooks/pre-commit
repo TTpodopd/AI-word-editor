@@ -1,0 +1,4 @@
+#!/bin/sh
+# 提交前自动刷新 README 更新记录并加入暂存区
+node scripts/update-readme.js
+git add README.md

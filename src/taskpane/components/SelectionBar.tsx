@@ -12,9 +12,50 @@ interface SelectionBarProps {
   onAction: (action: ActionType) => void;
   loading: boolean;
   compact?: boolean;
+  quickApplyEnabled?: boolean;
+  onQuickApplyChange?: (enabled: boolean) => void;
 }
 
-export function SelectionBar({ text, charCount, onAction, loading, compact }: SelectionBarProps) {
+function SelectionQuickApplyToggle({
+  quickApplyEnabled,
+  disabled,
+  onQuickApplyChange,
+}: {
+  quickApplyEnabled: boolean;
+  disabled?: boolean;
+  onQuickApplyChange?: (enabled: boolean) => void;
+}) {
+  if (!onQuickApplyChange) return null;
+
+  return (
+    <label
+      className="selection-quick-toggle"
+      title={
+        quickApplyEnabled
+          ? "关闭后将先在对话区预览，再确认写入"
+          : "开启后将直接替换选中文本，跳过预览"
+      }
+    >
+      <input
+        type="checkbox"
+        checked={!quickApplyEnabled}
+        disabled={disabled}
+        onChange={(event) => onQuickApplyChange(!event.target.checked)}
+      />
+      <span>预览</span>
+    </label>
+  );
+}
+
+export function SelectionBar({
+  text,
+  charCount,
+  onAction,
+  loading,
+  compact,
+  quickApplyEnabled = false,
+  onQuickApplyChange,
+}: SelectionBarProps) {
   const contentKind = useMemo(() => detectSelectionContentKind(text), [text]);
   const actions = useMemo(() => getActionsForSelection(text, true), [text]);
   const kindLabel = getSelectionContentKindLabel(contentKind);
@@ -39,6 +80,11 @@ export function SelectionBar({ text, charCount, onAction, loading, compact }: Se
             </button>
           ))}
         </div>
+        <SelectionQuickApplyToggle
+          quickApplyEnabled={quickApplyEnabled}
+          disabled={loading}
+          onQuickApplyChange={onQuickApplyChange}
+        />
       </div>
     );
   }
@@ -61,6 +107,11 @@ export function SelectionBar({ text, charCount, onAction, loading, compact }: Se
             {action.label}
           </button>
         ))}
+        <SelectionQuickApplyToggle
+          quickApplyEnabled={quickApplyEnabled}
+          disabled={loading}
+          onQuickApplyChange={onQuickApplyChange}
+        />
       </div>
     </div>
   );

@@ -165,7 +165,7 @@ export function useChat(
 
   useEffect(() => {
     void syncContextUsageFromSession();
-  }, [session?.id, syncContextUsageFromSession, settings.systemPrompts, options?.hasSelection]);
+  }, [session?.id, syncContextUsageFromSession, settings.systemPrompts, settings.outputStyleId, options?.hasSelection]);
 
   const applyStore = useCallback((store: Awaited<ReturnType<typeof loadChatSessions>>) => {
     const ordered = applyOrderedStore(store);

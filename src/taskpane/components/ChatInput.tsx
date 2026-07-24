@@ -1,6 +1,8 @@
 import React, { useMemo, useRef, useState } from "react";
 
-import { AppSettings, ChatSession, PendingAttachment } from "../types";
+import { AppSettings, PendingAttachment } from "../types";
+import { ChatBottomActionId } from "../constants/chatBottomActions";
+import { OutputStyleId } from "../prompts/outputStylePresets";
 import { ContextUsageStats } from "../utils/chatHistoryBudget";
 
 import { resolveModel } from "../services/modelService";
@@ -34,32 +36,19 @@ interface ChatInputProps {
 
   disabled: boolean;
 
-  sessions: ChatSession[];
-
-  activeSessionId: string | null;
-
   onModelChange: (modelId: string) => void;
+
+  onOutputStyleChange: (styleId: OutputStyleId) => void;
+
+  onReorderBottomActions: (order: ChatBottomActionId[]) => void;
 
   onSend: (message: string, attachments?: PendingAttachment[]) => void | Promise<string | null>;
 
   onSlashAction: (actionId: string) => void;
 
-  onNewChat: () => void;
-
   onOpenSettings: () => void;
 
   onToggleWebSearch: () => void;
-
-  onSwitchSession: (sessionId: string) => void;
-
-  onRenameSession: (sessionId: string, title: string) => void;
-
-  onReorderSessions: (orderedIds: string[]) => void;
-
-  onDeleteSession: (sessionId: string) => void;
-
-  onExportSessions?: () => void | Promise<void>;
-  onImportSessions?: (file: File) => void | Promise<string | null>;
 
   contextUsage: ContextUsageStats;
 
@@ -123,32 +112,19 @@ export function ChatInput({
 
   disabled,
 
-  sessions,
-
-  activeSessionId,
-
   onModelChange,
+
+  onOutputStyleChange,
+
+  onReorderBottomActions,
 
   onSend,
 
   onSlashAction,
 
-  onNewChat,
-
   onOpenSettings,
 
   onToggleWebSearch,
-
-  onSwitchSession,
-
-  onRenameSession,
-
-  onReorderSessions,
-
-  onDeleteSession,
-
-  onExportSessions,
-  onImportSessions,
 
   contextUsage,
 
@@ -627,19 +603,12 @@ export function ChatInput({
       <ChatInputBottomBar
         settings={settings}
         disabled={disabled}
-        sessions={sessions}
-        activeSessionId={activeSessionId}
         contextUsage={contextUsage}
         onModelChange={onModelChange}
-        onNewChat={onNewChat}
+        onOutputStyleChange={onOutputStyleChange}
+        onReorderBottomActions={onReorderBottomActions}
         onToggleWebSearch={onToggleWebSearch}
         onOpenSettings={onOpenSettings}
-        onSwitchSession={onSwitchSession}
-        onRenameSession={onRenameSession}
-        onReorderSessions={onReorderSessions}
-        onDeleteSession={onDeleteSession}
-        onExportSessions={onExportSessions}
-        onImportSessions={onImportSessions}
       />
 
     </div>

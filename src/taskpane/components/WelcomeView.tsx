@@ -4,6 +4,22 @@ interface WelcomeViewProps {
   onCardClick: (cardId: string) => void;
 }
 
+function SparkleIcon() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+      <path
+        d="M10 2.5l1.2 4.1 4.1 1.2-4.1 1.2L10 13.1l-1.2-4.1-4.1-1.2 4.1-1.2L10 2.5z"
+        fill="currentColor"
+      />
+      <path
+        d="M15.8 11.2l.7 2.3 2.3.7-2.3.7-.7 2.3-.7-2.3-2.3-.7 2.3-.7.7-2.3z"
+        fill="currentColor"
+        opacity="0.72"
+      />
+    </svg>
+  );
+}
+
 function GenerateIcon() {
   return (
     <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true">
@@ -89,14 +105,23 @@ const CARDS = [
 export function WelcomeView({ onCardClick }: WelcomeViewProps) {
   return (
     <div className="welcome-section">
-      <div className="greeting">
-        <span className="greeting-emoji" aria-hidden="true">
-          👋
+      <div className="welcome-hero-card">
+        <span className="welcome-hero-icon-wrap" aria-hidden="true">
+          <SparkleIcon />
         </span>
-        <h2 className="greeting-title">你好，欢迎使用 AI 助理</h2>
-        <p className="greeting-subtitle">高效编辑文档，试试以下操作</p>
+        <div className="welcome-hero-body">
+          <span className="welcome-hero-badge">AI 编辑助手</span>
+          <h2 className="welcome-hero-title">
+            <span className="welcome-hero-emoji" aria-hidden="true">
+              👋
+            </span>
+            你好，欢迎使用 AI 助理
+          </h2>
+          <p className="welcome-hero-subtitle">高效编辑文档，试试以下操作</p>
+        </div>
       </div>
-      <div className="feature-cards">
+
+      <div className="welcome-feature-list">
         {CARDS.map((card) => {
           const Icon = card.icon;
           return (

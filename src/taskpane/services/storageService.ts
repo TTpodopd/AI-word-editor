@@ -9,6 +9,8 @@ import {
   UIMessage,
 } from "../types";
 import { DEFAULT_THEME_COLOR_ID, resolveThemeColorId } from "../constants/themeColors";
+import { resolveChatBottomActionOrder } from "../constants/chatBottomActions";
+import { resolveOutputStyleId } from "../prompts/outputStylePresets";
 
 const SETTINGS_KEY = "ai-editor-settings";
 const CHAT_SESSIONS_KEY = "ai-editor-chat-sessions";
@@ -160,6 +162,8 @@ function parseSettings(raw: string): AppSettings {
     hiddenWritingTemplateIds: Array.isArray(parsed.hiddenWritingTemplateIds)
       ? parsed.hiddenWritingTemplateIds.filter((id): id is string => typeof id === "string" && !!id.trim())
       : [],
+    outputStyleId: resolveOutputStyleId(parsed.outputStyleId),
+    chatBottomActionOrder: resolveChatBottomActionOrder(parsed.chatBottomActionOrder),
   };
 }
 

@@ -1,6 +1,7 @@
 import React, { useEffect, useRef } from "react";
-import { UIMessage } from "../types";
+import { ChatSession, UIMessage } from "../types";
 import { MessageBubble } from "./MessageBubble";
+import { ChatConversationFabBar } from "./ChatConversationFabBar";
 import { ChatEmptyState } from "./ChatEmptyState";
 import { WelcomeView } from "./WelcomeView";
 import { ChatCloudBackground } from "./ChatCloudBackground";
@@ -9,6 +10,8 @@ interface ChatConversationProps {
   messages: UIMessage[];
   loading: boolean;
   editingMessageId: string | null;
+  sessions: ChatSession[];
+  activeSessionId: string | null;
   onApply: (content: string, applyMode: "replace" | "insert", referenceText?: string) => void;
   onRegenerate: (messageId: string) => void;
   onStartEdit: (messageId: string) => void;
@@ -21,12 +24,21 @@ interface ChatConversationProps {
   hasSelection: boolean;
   selectionText?: string;
   onWelcomeCardClick?: (cardId: string) => void;
+  onNewChat?: () => void;
+  onSwitchSession: (sessionId: string) => void;
+  onRenameSession: (sessionId: string, title: string) => void;
+  onReorderSessions: (orderedIds: string[]) => void;
+  onDeleteSession: (sessionId: string) => void;
+  onExportSessions?: () => void | Promise<void>;
+  onImportSessions?: (file: File) => void | Promise<string | null>;
 }
 
 export function ChatConversation({
   messages,
   loading,
   editingMessageId,
+  sessions,
+  activeSessionId,
   onApply,
   onRegenerate,
   onStartEdit,
@@ -39,12 +51,34 @@ export function ChatConversation({
   hasSelection,
   selectionText,
   onWelcomeCardClick,
+  onNewChat,
+  onSwitchSession,
+  onRenameSession,
+  onReorderSessions,
+  onDeleteSession,
+  onExportSessions,
+  onImportSessions,
 }: ChatConversationProps) {
   const bottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, loading]);
+
+  const fabBar = (
+    <ChatConversationFabBar
+      disabled={loading}
+      sessions={sessions}
+      activeSessionId={activeSessionId}
+      onNewChat={onNewChat}
+      onSwitchSession={onSwitchSession}
+      onRenameSession={onRenameSession}
+      onReorderSessions={onReorderSessions}
+      onDeleteSession={onDeleteSession}
+      onExportSessions={onExportSessions}
+      onImportSessions={onImportSessions}
+    />
+  );
 
   if (messages.length === 0) {
     return (
@@ -59,6 +93,7 @@ export function ChatConversation({
             onQuickAction={onQuickAction}
           />
         )}
+        {fabBar}
       </div>
     );
   }
@@ -94,6 +129,7 @@ export function ChatConversation({
         )}
         <div ref={bottomRef} />
       </div>
+      {fabBar}
     </div>
   );
 }

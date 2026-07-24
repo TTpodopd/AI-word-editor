@@ -1,6 +1,8 @@
 import React from "react";
-import { AppSettings, ChatSession } from "../types";
+import { AppSettings } from "../types";
 import { getVisibleModels } from "../services/modelService";
+import { DEFAULT_OUTPUT_STYLE_ID, OutputStyleId } from "../prompts/outputStylePresets";
+import { ChatBottomActionId, DEFAULT_CHAT_BOTTOM_ACTION_ORDER } from "../constants/chatBottomActions";
 import { ContextUsageStats } from "../utils/chatHistoryBudget";
 import { ChatBottomActions } from "./ChatBottomActions";
 import { ContextUsageIndicator } from "./ContextUsageIndicator";
@@ -9,37 +11,23 @@ import { ModelSelector } from "./ModelSelector";
 interface ChatInputBottomBarProps {
   settings: AppSettings;
   disabled?: boolean;
-  sessions: ChatSession[];
-  activeSessionId: string | null;
   contextUsage: ContextUsageStats;
   onModelChange: (modelId: string) => void;
-  onNewChat: () => void;
+  onOutputStyleChange: (styleId: OutputStyleId) => void;
   onToggleWebSearch: () => void;
   onOpenSettings: () => void;
-  onSwitchSession: (sessionId: string) => void;
-  onRenameSession: (sessionId: string, title: string) => void;
-  onReorderSessions: (orderedIds: string[]) => void;
-  onDeleteSession: (sessionId: string) => void;
-  onExportSessions?: () => void | Promise<void>;
-  onImportSessions?: (file: File) => void | Promise<string | null>;
+  onReorderBottomActions?: (order: ChatBottomActionId[]) => void;
 }
 
 export function ChatInputBottomBar({
   settings,
   disabled,
-  sessions,
-  activeSessionId,
   contextUsage,
   onModelChange,
-  onNewChat,
+  onOutputStyleChange,
   onToggleWebSearch,
   onOpenSettings,
-  onSwitchSession,
-  onRenameSession,
-  onReorderSessions,
-  onDeleteSession,
-  onExportSessions,
-  onImportSessions,
+  onReorderBottomActions,
 }: ChatInputBottomBarProps) {
   const modelOptions = getVisibleModels(settings);
 
@@ -56,19 +44,14 @@ export function ChatInputBottomBar({
       </div>
 
       <ChatBottomActions
-        sessions={sessions}
-        activeSessionId={activeSessionId}
+        actionOrder={settings.chatBottomActionOrder || DEFAULT_CHAT_BOTTOM_ACTION_ORDER}
         disabled={disabled}
         webSearchEnabled={settings.webSearch?.enabled}
-        onNewChat={onNewChat}
+        outputStyleId={settings.outputStyleId || DEFAULT_OUTPUT_STYLE_ID}
+        onOutputStyleChange={onOutputStyleChange}
+        onReorderActions={onReorderBottomActions || (() => undefined)}
         onToggleWebSearch={onToggleWebSearch}
         onOpenSettings={onOpenSettings}
-        onSwitchSession={onSwitchSession}
-        onRenameSession={onRenameSession}
-        onReorderSessions={onReorderSessions}
-        onDeleteSession={onDeleteSession}
-        onExportSessions={onExportSessions}
-        onImportSessions={onImportSessions}
       />
     </div>
   );

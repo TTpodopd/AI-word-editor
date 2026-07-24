@@ -1,0 +1,14 @@
+---
+description: Git 提交时同步更新 README 更新记录
+alwaysApply: true
+---
+
+# Git 提交时更新 README
+
+创建 git commit 之前，必须：
+
+1. 运行 `npm run update-readme`，刷新 `README.md` 的「更新记录」区块（最后更新日期 + 最近提交摘要）
+2. 若本次变更新增了用户可见功能，同步补充 README 对应功能说明段落
+3. 将 `README.md` 一并加入本次 commit
+
+仓库已配置 `.githooks/pre-commit` 自动执行上述刷新；首次克隆后运行 `npm run setup` 或 `npm run setup:hooks` 启用钩子。
