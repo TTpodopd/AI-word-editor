@@ -9,6 +9,7 @@ import {
 } from "../prompts/writing/prompts";
 import { parseOutlineResponse } from "../prompts/writing/outlineParser";
 import { getWritingTemplateById } from "../prompts/writing/templates";
+import { normalizeWritingSectionText } from "../utils/textFormat";
 
 export interface WritingStreamOptions {
   signal?: AbortSignal;
@@ -71,6 +72,7 @@ export async function generateWritingOutline(
     project: {
       ...project,
       title: parsed.title,
+      extraNotes: extraNotes?.trim() || project.extraNotes || "",
       outline: parsed.sections,
       status: "outline",
       currentSectionId: parsed.sections[0]?.id ?? null,
@@ -109,7 +111,7 @@ export async function generateSectionContent(
     return { project, content: response.content, error: response.error, aborted: response.aborted };
   }
 
-  const content = response.content.trim();
+  const content = normalizeWritingSectionText(response.content.trim());
   const nextOutline = project.outline.map((item) =>
     item.id === sectionId
       ? { ...item, content, status: "done" as const }

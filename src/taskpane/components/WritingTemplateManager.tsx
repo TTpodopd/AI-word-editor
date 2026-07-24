@@ -5,7 +5,8 @@ import {
   addCustomWritingTemplate,
   downloadWritingTemplate,
   importWritingTemplateFromFile,
-  removeCustomWritingTemplate,
+  removeWritingTemplate,
+  restoreHiddenWritingTemplates,
 } from "../services/writingTemplateStorage";
 
 interface WritingTemplateManagerProps {
@@ -25,6 +26,7 @@ export function WritingTemplateManager({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const templates = getAllWritingTemplates(settings);
   const customTemplates = templates.filter((item) => !item.builtin);
+  const hiddenBuiltinCount = settings.hiddenWritingTemplateIds?.length ?? 0;
 
   const handleImport = async (file: File) => {
     try {
@@ -38,9 +40,15 @@ export function WritingTemplateManager({
   };
 
   const handleDelete = async (template: WritingTemplate) => {
-    const nextSettings = await removeCustomWritingTemplate(template.id);
+    const nextSettings = await removeWritingTemplate(template);
     onSettingsChange(nextSettings);
     onNotify(`已删除模板「${template.name}」`);
+  };
+
+  const handleRestoreBuiltin = async () => {
+    const nextSettings = await restoreHiddenWritingTemplates();
+    onSettingsChange(nextSettings);
+    onNotify("已恢复全部内置模板");
   };
 
   return (
@@ -66,6 +74,16 @@ export function WritingTemplateManager({
             >
               导入 JSON
             </button>
+            {hiddenBuiltinCount > 0 && (
+              <button
+                type="button"
+                className="writing-ghost-btn"
+                disabled={disabled}
+                onClick={() => void handleRestoreBuiltin()}
+              >
+                恢复内置模板 ({hiddenBuiltinCount})
+              </button>
+            )}
             <input
               ref={fileInputRef}
               type="file"

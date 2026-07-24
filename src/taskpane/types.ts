@@ -38,10 +38,28 @@ export interface WritingTemplateSkeleton {
   brief: string;
 }
 
+/** 内置/自定义写作模板所属分类（不含「全部」） */
+export type WritingTemplateCategoryId =
+  | "plan"
+  | "report"
+  | "decision"
+  | "notice"
+  | "request"
+  | "letter"
+  | "speech"
+  | "custom";
+
+export interface WritingTemplateCategory {
+  id: WritingTemplateCategoryId;
+  label: string;
+  hint: string;
+}
+
 export interface WritingTemplate {
   id: string;
   name: string;
   description: string;
+  category?: WritingTemplateCategoryId;
   builtin?: boolean;
   outlineSkeleton: WritingTemplateSkeleton[];
   systemPrompt: string;
@@ -52,6 +70,7 @@ export interface WritingProject {
   templateId: string;
   topic: string;
   title: string;
+  extraNotes?: string;
   outline: WritingOutlineSection[];
   currentSectionId: string | null;
   status: WritingProjectStatus;
@@ -214,6 +233,8 @@ export interface AppSettings {
   webSearch: WebSearchSettings;
   quickApplyEnabled?: boolean;
   customWritingTemplates?: WritingTemplate[];
+  /** 已从列表隐藏的内置模板 id */
+  hiddenWritingTemplateIds?: string[];
 }
 
 export const BUILTIN_MODEL_OPTIONS: ModelConfig[] = [
@@ -253,6 +274,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   webSearch: { ...DEFAULT_WEB_SEARCH },
   quickApplyEnabled: false,
   customWritingTemplates: [],
+  hiddenWritingTemplateIds: [],
 };
 
 export const SYSTEM_PROMPT_WITH_SELECTION = DEFAULT_SYSTEM_PROMPTS.withSelection;

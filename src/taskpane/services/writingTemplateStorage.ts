@@ -28,6 +28,58 @@ export async function removeCustomWritingTemplate(templateId: string): Promise<A
   return saveCustomWritingTemplates(existing.filter((item) => item.id !== templateId));
 }
 
+export async function removeWritingTemplate(template: WritingTemplate): Promise<AppSettings> {
+  if (template.builtin) {
+    const settings = await loadSettings();
+    const hidden = new Set(settings.hiddenWritingTemplateIds || []);
+    hidden.add(template.id);
+    const nextSettings = {
+      ...settings,
+      hiddenWritingTemplateIds: [...hidden],
+    };
+    await saveSettings(nextSettings);
+    return nextSettings;
+  }
+
+  return removeCustomWritingTemplate(template.id);
+}
+
+export async function restoreHiddenWritingTemplates(templateIds?: string[]): Promise<AppSettings> {
+  const settings = await loadSettings();
+  const hidden = settings.hiddenWritingTemplateIds || [];
+  if (hidden.length === 0) {
+    return settings;
+  }
+
+  const nextHidden = templateIds
+    ? hidden.filter((id) => !templateIds.includes(id))
+    : [];
+
+  const nextSettings = {
+    ...settings,
+    hiddenWritingTemplateIds: nextHidden,
+  };
+  await saveSettings(nextSettings);
+  return nextSettings;
+}
+
+export async function updateCustomWritingTemplate(template: WritingTemplate): Promise<AppSettings> {
+  return addCustomWritingTemplate({ ...template, builtin: false });
+}
+
+export function createEmptyWritingTemplate(): WritingTemplate {
+  return {
+    id: `custom-${Date.now()}`,
+    name: "新建模板",
+    description: "",
+    category: "custom",
+    builtin: false,
+    outlineSkeleton: [{ level: 1, title: "第一章", brief: "请填写本节写作要点" }],
+    systemPrompt: "你是一位专业的文档写作助手。",
+    sectionRules: "直接输出正文，不要 Markdown 标记。",
+  };
+}
+
 export function downloadWritingTemplate(template: WritingTemplate, filename?: string): void {
   const payload = {
     version: 1,

@@ -2,6 +2,18 @@
 
 import { convertLatexToOoxml } from "./latexService";
 import { localizeErrorMessage } from "../utils/localizeErrorMessage";
+import {
+  isWritingStructuralHeading,
+  mergeWritingSectionTexts,
+  normalizeWritingSectionText,
+  shouldCenterWritingParagraph,
+  shouldIndentWritingParagraph,
+  shouldRightAlignWritingParagraph,
+  WRITING_BODY_FONT_SIZE,
+  WRITING_FONT_NAME,
+  WRITING_LINE_SPACING,
+  WRITING_TITLE_FONT_SIZE,
+} from "../utils/textFormat";
 import type { DocumentHeading } from "../types";
 
 let trackedRange: Word.Range | null = null;
@@ -103,6 +115,250 @@ async function applyFirstLineIndent(
   }
 
   await context.sync();
+}
+
+export type WritingInsertFormatMode = "standard" | "official-document";
+
+export interface WritingSectionInsert {
+  title: string;
+  body: string;
+  level: 1 | 2 | 3;
+}
+
+export interface InsertWritingDocumentOptions extends ApplyTextOptions {
+  formatMode?: WritingInsertFormatMode;
+}
+
+type ParagraphWithLineSpacing = Word.Paragraph & {
+  space1Pt5?: () => void;
+  lineSpacing?: number;
+};
+
+function applyWritingLineSpacingToParagraph(paragraph: Word.Paragraph): boolean {
+  const target = paragraph as ParagraphWithLineSpacing;
+  if (typeof target.space1Pt5 === "function") {
+    target.space1Pt5();
+    return true;
+  }
+  if ("lineSpacing" in target) {
+    target.lineSpacing = WRITING_BODY_FONT_SIZE * 1.5;
+    return true;
+  }
+  return false;
+}
+
+function patchParagraphLineSpacingOoxml(
+  ooxml: string,
+  line: number,
+  rule: "auto" | "exact"
+): string {
+  if (/<w:spacing\b/.test(ooxml)) {
+    let patched = ooxml;
+    if (/w:line=["']/.test(patched)) {
+      patched = patched.replace(/w:line=["'][^"']*["']/g, `w:line="${line}"`);
+    } else {
+      patched = patched.replace(/<w:spacing\b/, `<w:spacing w:line="${line}"`);
+    }
+    if (/w:lineRule=["']/.test(patched)) {
+      patched = patched.replace(/w:lineRule=["'][^"']*["']/g, `w:lineRule="${rule}"`);
+    } else {
+      patched = patched.replace(/<w:spacing\b/, `<w:spacing w:lineRule="${rule}"`);
+    }
+    return patched;
+  }
+
+  const spacing = `<w:spacing w:line="${line}" w:lineRule="${rule}"/>`;
+  if (/<w:pPr\b/.test(ooxml)) {
+    return ooxml.replace(/<w:pPr\b([^>]*)>/, `<w:pPr$1>${spacing}`);
+  }
+  return ooxml.replace(/<w:p\b([^>]*)>/, `<w:p$1><w:pPr>${spacing}</w:pPr>`);
+}
+
+async function applyWritingLineSpacingViaOoxml(
+  context: Word.RequestContext,
+  paragraphs: Word.ParagraphCollection
+): Promise<void> {
+  for (let index = 0; index < paragraphs.items.length; index += 1) {
+    const paragraph = paragraphs.items[index];
+    const text = paragraph.text?.replace(/\r/g, "").trim() ?? "";
+    if (!text) continue;
+
+    try {
+      const ooxmlResult = paragraph.getOoxml();
+      await context.sync();
+      const patched = patchParagraphLineSpacingOoxml(
+        ooxmlResult.value,
+        WRITING_LINE_SPACING.line,
+        WRITING_LINE_SPACING.rule
+      );
+      if (patched === ooxmlResult.value) continue;
+      paragraph.insertOoxml(patched, Word.InsertLocation.replace);
+      await context.sync();
+    } catch {
+      // OOXML 替换失败时跳过该段落
+    }
+  }
+}
+
+async function applyWritingParagraphFormat(
+  context: Word.RequestContext,
+  insertedRange: Word.Range,
+  options: {
+    formatMode: WritingInsertFormatMode;
+    firstLineIndentChars: number;
+    titleLineCount?: number;
+  }
+): Promise<void> {
+  const paragraphs = insertedRange.paragraphs;
+  paragraphs.load("items");
+  await context.sync();
+
+  for (const paragraph of paragraphs.items) {
+    paragraph.load("text,alignment,outlineLevel");
+    paragraph.font.load("size,bold,name");
+  }
+  await context.sync();
+
+  let titleLinesRemaining = options.titleLineCount ?? 0;
+
+  const applyFont = (paragraph: Word.Paragraph, size: number, bold = false) => {
+    paragraph.font.name = WRITING_FONT_NAME;
+    paragraph.font.size = size;
+    paragraph.font.bold = bold;
+  };
+
+  for (let index = 0; index < paragraphs.items.length; index += 1) {
+    const paragraph = paragraphs.items[index];
+    const paragraphText = paragraph.text?.replace(/\r/g, "").trim() ?? "";
+    if (!paragraphText) continue;
+
+    paragraph.styleBuiltIn = Word.BuiltInStyleName.normal;
+    paragraph.outlineLevel = 10;
+    paragraph.firstLineIndent = 0;
+    paragraph.leftIndent = 0;
+
+    if (titleLinesRemaining > 0) {
+      applyFont(paragraph, WRITING_TITLE_FONT_SIZE, true);
+      paragraph.alignment = Word.Alignment.justified;
+      titleLinesRemaining -= 1;
+    } else if (shouldCenterWritingParagraph(paragraphText, index, options.formatMode)) {
+      applyFont(paragraph, WRITING_TITLE_FONT_SIZE, true);
+      paragraph.alignment = Word.Alignment.centered;
+    } else if (shouldRightAlignWritingParagraph(paragraphText)) {
+      applyFont(paragraph, WRITING_BODY_FONT_SIZE, false);
+      paragraph.alignment = Word.Alignment.right;
+    } else {
+      applyFont(paragraph, WRITING_BODY_FONT_SIZE, isWritingStructuralHeading(paragraphText));
+      paragraph.alignment = Word.Alignment.justified;
+
+      if (shouldIndentWritingParagraph(paragraphText, options.formatMode)) {
+        paragraph.firstLineIndent = WRITING_BODY_FONT_SIZE * options.firstLineIndentChars;
+      }
+    }
+
+    applyWritingLineSpacingToParagraph(paragraph);
+  }
+
+  await context.sync();
+  await applyWritingLineSpacingViaOoxml(context, paragraphs);
+}
+
+async function insertWritingTextAtRange(
+  context: Word.RequestContext,
+  targetRange: Word.Range,
+  text: string,
+  options: InsertWritingDocumentOptions & {
+    formatMode: WritingInsertFormatMode;
+    titleLineCount?: number;
+  }
+): Promise<{ success: boolean; error?: string }> {
+  if (!text.trim()) {
+    return { success: false, error: "章节内容为空" };
+  }
+
+  const insertedRange = targetRange.insertText(text, Word.InsertLocation.end);
+  const indentChars = options.firstLineIndentChars ?? 0;
+
+  await applyWritingParagraphFormat(context, insertedRange, {
+    formatMode: options.formatMode,
+    firstLineIndentChars: indentChars,
+    titleLineCount: options.titleLineCount,
+  });
+
+  return { success: true };
+}
+
+export async function insertWritingDocument(
+  sections: WritingSectionInsert[],
+  options?: InsertWritingDocumentOptions
+): Promise<{ success: boolean; error?: string; inserted: number }> {
+  const formatMode = options?.formatMode ?? "standard";
+  const filledSections = sections.filter((section) => section.body.trim() || section.title.trim());
+
+  if (filledSections.length === 0) {
+    return { success: false, error: "没有可插入的章节内容", inserted: 0 };
+  }
+
+  let text = "";
+  let titleLineCount = 0;
+
+  if (formatMode === "official-document") {
+    text = mergeWritingSectionTexts(filledSections.map((section) => section.body));
+  } else {
+    const chunks: string[] = [];
+    for (const section of filledSections) {
+      const title = normalizeWritingSectionText(section.title);
+      const body = normalizeWritingSectionText(section.body);
+      if (title) {
+        chunks.push(title);
+        titleLineCount += 1;
+      }
+      if (body) {
+        chunks.push(body);
+      }
+    }
+    text = mergeWritingSectionTexts(chunks);
+  }
+
+  if (!text.trim()) {
+    return { success: false, error: "没有可插入的章节内容", inserted: 0 };
+  }
+
+  const runInsert = async (
+    context: Word.RequestContext,
+    targetRange: Word.Range
+  ): Promise<{ success: boolean; error?: string }> =>
+    insertWritingTextAtRange(context, targetRange, text, {
+      ...options,
+      formatMode,
+      titleLineCount: formatMode === "standard" ? titleLineCount : 0,
+    });
+
+  if (trackedCursor) {
+    try {
+      return await Word.run(trackedCursor, async (context) => {
+        if (trackedCursor!.isNullObject) {
+          return { success: false, error: "光标位置已失效，请重新点击文档中的插入位置", inserted: 0 };
+        }
+        const result = await runInsert(context, trackedCursor!);
+        context.trackedObjects.remove(trackedCursor!);
+        trackedCursor = null;
+        return { ...result, inserted: result.success ? filledSections.length : 0 };
+      });
+    } catch (err) {
+      return { success: false, error: localizeErrorMessage(err, "写入文档失败"), inserted: 0 };
+    }
+  }
+
+  try {
+    return await Word.run(async (context) => {
+      const range = context.document.getSelection();
+      const result = await runInsert(context, range);
+      return { ...result, inserted: result.success ? filledSections.length : 0 };
+    });
+  } catch (err) {
+    return { success: false, error: localizeErrorMessage(err, "写入文档失败"), inserted: 0 };
+  }
 }
 
 async function insertAndFormat(

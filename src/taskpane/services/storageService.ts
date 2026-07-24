@@ -157,6 +157,9 @@ function parseSettings(raw: string): AppSettings {
     customWritingTemplates: Array.isArray(parsed.customWritingTemplates)
       ? parsed.customWritingTemplates
       : [],
+    hiddenWritingTemplateIds: Array.isArray(parsed.hiddenWritingTemplateIds)
+      ? parsed.hiddenWritingTemplateIds.filter((id): id is string => typeof id === "string" && !!id.trim())
+      : [],
   };
 }
 

@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { ChatConversation } from "./components/ChatConversation";
 import { ChatInput } from "./components/ChatInput";
+import { ChatInputBottomBar } from "./components/ChatInputBottomBar";
 import { SettingsPanel } from "./components/SettingsPanel";
 import { SettingsHeader } from "./components/SettingsHeader";
 import { SelectionBar } from "./components/SelectionBar";
@@ -28,6 +29,7 @@ export function App({ showBrowserPreviewHint = false }: AppProps) {
   const [settings, setSettings] = useState<AppSettings>(DEFAULT_SETTINGS);
   const [toast, setToast] = useState("");
   const [writingTemplateId, setWritingTemplateId] = useState<string | undefined>(undefined);
+  const [writingBusy, setWritingBusy] = useState(false);
 
   const { selection } = useSelection();
   useViewportScale();
@@ -322,6 +324,7 @@ export function App({ showBrowserPreviewHint = false }: AppProps) {
                 onProjectChange={handleWritingProjectChange}
                 onSettingsChange={handleSettingsChange}
                 onNotify={showToast}
+                onBusyChange={setWritingBusy}
               />
             </main>
           ) : view === "tools" ? (
@@ -397,8 +400,30 @@ export function App({ showBrowserPreviewHint = false }: AppProps) {
 
           {(view === "writing" || view === "tools") && toast && <div className="chat-toast">{toast}</div>}
 
-          {(view === "writing" || view === "tools") && (
+          {view === "writing" && (
             <div className="writing-bottom-bar">
+              <ChatInputBottomBar
+                settings={settings}
+                disabled={loading || writingBusy}
+                sessions={sessions}
+                activeSessionId={activeSessionId}
+                contextUsage={contextUsage}
+                onModelChange={handleModelChange}
+                onNewChat={handleNewChat}
+                onToggleWebSearch={handleToggleWebSearch}
+                onOpenSettings={() => setView("settings")}
+                onSwitchSession={switchSession}
+                onRenameSession={renameSession}
+                onReorderSessions={reorderSessions}
+                onDeleteSession={deleteSession}
+                onExportSessions={handleExportSessions}
+                onImportSessions={handleImportSessions}
+              />
+            </div>
+          )}
+
+          {view === "tools" && (
+            <div className="writing-bottom-bar writing-bottom-bar--compact">
               <button type="button" className="icon-btn" title="设置" onClick={() => setView("settings")}>
                 <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
                   <circle cx="8" cy="3" r="1.2" />

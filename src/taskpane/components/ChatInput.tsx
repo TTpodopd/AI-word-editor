@@ -2,15 +2,12 @@ import React, { useMemo, useRef, useState } from "react";
 
 import { AppSettings, ChatSession, PendingAttachment } from "../types";
 import { ContextUsageStats } from "../utils/chatHistoryBudget";
-import { ContextUsageIndicator } from "./ContextUsageIndicator";
 
-import { getVisibleModels, resolveModel } from "../services/modelService";
+import { resolveModel } from "../services/modelService";
 
 import { ACTION_PROMPTS, getActionBySlashCommand, getActionsForSelection } from "../prompts/actions";
 
-import { ChatBottomActions } from "./ChatBottomActions";
-
-import { ModelSelector } from "./ModelSelector";
+import { ChatInputBottomBar } from "./ChatInputBottomBar";
 
 import { AttachmentStrip } from "./AttachmentStrip";
 import { LatexFormulaDialog } from "./LatexFormulaDialog";
@@ -449,10 +446,6 @@ export function ChatInput({
 
 
 
-  const modelOptions = getVisibleModels(settings);
-
-
-
   return (
 
     <div className={`chat-input-panel${resizing ? " is-resizing" : ""}`}>
@@ -631,45 +624,23 @@ export function ChatInput({
         onConfirm={handleLatexConfirm}
       />
 
-      <div className="chat-input-bottom">
-        <div className="chat-input-bottom-left">
-          <ModelSelector
-            options={modelOptions}
-            value={settings.selectedModelId}
-            disabled={disabled}
-            onChange={onModelChange}
-          />
-          <ContextUsageIndicator usage={contextUsage} />
-        </div>
-
-        <ChatBottomActions
-
-          sessions={sessions}
-
-          activeSessionId={activeSessionId}
-
-          disabled={disabled}
-
-          webSearchEnabled={settings.webSearch?.enabled}
-
-          onNewChat={onNewChat}
-
-          onToggleWebSearch={onToggleWebSearch}
-
-          onOpenSettings={onOpenSettings}
-
-          onSwitchSession={onSwitchSession}
-
-          onRenameSession={onRenameSession}
-
-          onReorderSessions={onReorderSessions}
-
-          onDeleteSession={onDeleteSession}
-          onExportSessions={onExportSessions}
-          onImportSessions={onImportSessions}
-        />
-
-      </div>
+      <ChatInputBottomBar
+        settings={settings}
+        disabled={disabled}
+        sessions={sessions}
+        activeSessionId={activeSessionId}
+        contextUsage={contextUsage}
+        onModelChange={onModelChange}
+        onNewChat={onNewChat}
+        onToggleWebSearch={onToggleWebSearch}
+        onOpenSettings={onOpenSettings}
+        onSwitchSession={onSwitchSession}
+        onRenameSession={onRenameSession}
+        onReorderSessions={onReorderSessions}
+        onDeleteSession={onDeleteSession}
+        onExportSessions={onExportSessions}
+        onImportSessions={onImportSessions}
+      />
 
     </div>
 
