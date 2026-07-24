@@ -106,6 +106,8 @@ npm start
 | `npm run build` | 生产构建 |
 | `npm run update-readme` | 刷新 README 更新记录（commit 前也会自动执行） |
 | `npm run setup:hooks` | 启用 git pre-commit 钩子 |
+
+> **提交规范**：commit message 请使用中文；详见 `.cursor/rules/git-commit.mdc`。
 | `npm run start:prod` | 本地 HTTPS 一体服务（静态 + API） |
 | `npm run sideload` | 旁加载到 Word |
 | `npm run validate` | 校验 manifest |
@@ -203,6 +205,7 @@ npm run start:prod   # 本地验证生产包
 
 > 最后更新：2026-07-24
 
+- Enhance chat UX with output styles, floating session controls, and reorderable toolbar. (c8ddd85)
 - Enhance writing assistant with template library, customization, and Word formatting. (34db4fd)
 - Add one-click bat to switch Word add-in to local development. (838ba0a)
 - Fix browser preview blank page when Word API is unavailable. (d6c665a)
@@ -210,6 +213,5 @@ npm run start:prod   # 本地验证生产包
 - 快捷指令页清理排版区块默认改为折叠。 (866d482)
 - 新增 AI Word Editor 安装脚本，简化安装过程并提供用户提示。 (3a3871e)
 - 重构快捷指令页并修复流式请求误取消，清除/更新类操作并入主功能卡片。 (b258908)
-- 移除智能填表功能，避免插入回复被误判为表单填充。 (47fbed7)
 
 <!-- AUTO:CHANGELOG_END -->
