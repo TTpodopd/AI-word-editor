@@ -205,13 +205,13 @@ npm run start:prod   # 本地验证生产包
 
 > 最后更新：2026-07-24
 
-- Enhance chat UX with output styles, floating session controls, and reorderable toolbar. (c8ddd85)
-- Enhance writing assistant with template library, customization, and Word formatting. (34db4fd)
-- Add one-click bat to switch Word add-in to local development. (838ba0a)
-- Fix browser preview blank page when Word API is unavailable. (d6c665a)
-- 清理 AI 输出中变量前未成对的 Markdown 下划线，避免写入 Word 时多出符号。 (19c527e)
-- 快捷指令页清理排版区块默认改为折叠。 (866d482)
-- 新增 AI Word Editor 安装脚本，简化安装过程并提供用户提示。 (3a3871e)
-- 重构快捷指令页并修复流式请求误取消，清除/更新类操作并入主功能卡片。 (b258908)
+- 添加中文 Git 提交规范（4215456）
+- 增强对话页体验：输出风格、悬浮会话按钮与可拖动工具栏（c8ddd85）
+- 增强写作助手：模板库、自定义与 Word 排版（34db4fd）
+- 新增一键脚本，将 Word 插件切换为本地开发模式（838ba0a）
+- 修复浏览器预览在 Word API 不可用时空白的问题（d6c665a）
+- 清理 AI 输出中变量前未成对的 Markdown 下划线，避免写入 Word 时多出符号。（19c527e）
+- 快捷指令页清理排版区块默认改为折叠。（866d482）
+- 新增 AI Word Editor 安装脚本，简化安装过程并提供用户提示。（3a3871e）
 
 <!-- AUTO:CHANGELOG_END -->

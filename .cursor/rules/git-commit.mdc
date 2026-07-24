@@ -23,6 +23,12 @@ alwaysApply: true
 
 ## 提交前检查
 
-1. 运行 `npm run update-readme`，刷新 README「更新记录」
+1. 运行 `npm run update-readme`，刷新 README「更新记录」（展示为中文）
 2. 若有新功能，同步更新 README 功能说明
 3. 将 `README.md` 纳入本次 commit（pre-commit 钩子会自动刷新更新记录）
+
+## README 更新记录
+
+- 更新记录条目一律使用**中文**说明
+- 新提交已是中文时，脚本直接采用 commit 标题
+- 历史英文提交需在 `scripts/commit-message-zh.json` 中按短 hash 补充中文摘要

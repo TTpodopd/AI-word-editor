@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * 更新 README.md 的「更新记录」区块（最后更新日期 + 最近提交摘要）。
+ * 更新 README.md 的「更新记录」区块（最后更新日期 + 最近提交摘要，均为中文）。
  * 由 git pre-commit 钩子或 npm run update-readme 调用。
  */
 
@@ -10,8 +10,10 @@ const path = require("path");
 
 const ROOT = path.join(__dirname, "..");
 const README_PATH = path.join(ROOT, "README.md");
+const ZH_MAP_PATH = path.join(__dirname, "commit-message-zh.json");
 const CHANGELOG_END = "<!-- AUTO:CHANGELOG_END -->";
 const MAX_COMMITS = 8;
+const HAS_CHINESE = /[\u4e00-\u9fff]/;
 
 function runGit(args) {
   const result = spawnSync("git", args, { cwd: ROOT, encoding: "utf8" });
@@ -21,7 +23,36 @@ function runGit(args) {
   return (result.stdout || "").trim();
 }
 
+function loadZhMap() {
+  if (!fs.existsSync(ZH_MAP_PATH)) {
+    return {};
+  }
+  try {
+    return JSON.parse(fs.readFileSync(ZH_MAP_PATH, "utf8"));
+  } catch (err) {
+    console.warn("无法读取 commit-message-zh.json:", err.message);
+    return {};
+  }
+}
+
+function resolveCommitLabel(subject, hash, zhMap) {
+  const shortHash = hash.slice(0, 7);
+  const mapped = zhMap[shortHash] || zhMap[hash];
+  if (mapped) {
+    return mapped;
+  }
+  if (HAS_CHINESE.test(subject)) {
+    return subject.replace(/\s+$/, "");
+  }
+  console.warn(
+    `[update-readme] 提交 ${shortHash} 无中文说明，请在 scripts/commit-message-zh.json 中补充：`,
+    subject
+  );
+  return subject.replace(/\s+$/, "");
+}
+
 function getRecentCommits() {
+  const zhMap = loadZhMap();
   const log = runGit(["log", `-${MAX_COMMITS}`, "--pretty=format:%s%x09%h"]);
   if (!log) {
     return ["- （暂无 git 历史）"];
@@ -31,7 +62,8 @@ function getRecentCommits() {
     if (tab < 0) return `- ${line}`;
     const subject = line.slice(0, tab);
     const hash = line.slice(tab + 1);
-    return `- ${subject} (${hash})`;
+    const label = resolveCommitLabel(subject, hash, zhMap);
+    return `- ${label}（${hash.slice(0, 7)}）`;
   });
 }
 
