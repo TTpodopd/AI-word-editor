@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { ChatConversation } from "./components/ChatConversation";
-import { ChatInput } from "./components/ChatInput";
+import { ChatInput, ChatInputDraft } from "./components/ChatInput";
 import { ChatInputBottomBar } from "./components/ChatInputBottomBar";
 import { SettingsPanel } from "./components/SettingsPanel";
 import { SettingsHeader } from "./components/SettingsHeader";
@@ -11,7 +11,7 @@ import { WritingAssistantPanel } from "./components/WritingAssistantPanel";
 import { useSelection } from "./hooks/useSelection";
 import { useViewportScale } from "./hooks/useViewportScale";
 import { useChat } from "./hooks/useChat";
-import { ActionType, AppSettings, AppView, DEFAULT_SETTINGS, PendingAttachment } from "./types";
+import { ActionType, AppSettings, AppView, DEFAULT_SETTINGS } from "./types";
 import { ensureOfficeReady, loadSettings, saveSettings, saveSelectedModel, saveWebSearchEnabled } from "./services/storageService";
 import { ensureSelectedModelVisible } from "./services/modelService";
 import { applyText, captureCursor, captureSelection, clearTrackedRange, hasTrackedRange, readCurrentSelection } from "./services/wordService";
@@ -32,6 +32,7 @@ export function App({ showBrowserPreviewHint = false }: AppProps) {
   const [toast, setToast] = useState("");
   const [writingTemplateId, setWritingTemplateId] = useState<string | undefined>(undefined);
   const [writingBusy, setWritingBusy] = useState(false);
+  const [inputDraft, setInputDraft] = useState<ChatInputDraft | null>(null);
 
   const { selection } = useSelection();
   useViewportScale();
@@ -88,16 +89,15 @@ export function App({ showBrowserPreviewHint = false }: AppProps) {
   }, [view, settings.themeColorId]);
 
   const handleSend = useCallback(
-    async (message: string, attachments?: PendingAttachment[]): Promise<string | null> => {
+    async (message: string): Promise<string | null> => {
       const error = await sendMessage(
         message,
-        selection.hasSelection ? selection.text : undefined,
-        attachments
+        selection.hasSelection ? selection.text : undefined
       );
       if (error) showToast(error);
       return error;
     },
-    [sendMessage, selection.hasSelection, selection.text]
+    [sendMessage, selection.hasSelection, selection.text, showToast]
   );
 
   const handleSlashAction = useCallback(
@@ -293,35 +293,64 @@ export function App({ showBrowserPreviewHint = false }: AppProps) {
   );
 
   const handleWelcomeCardClick = useCallback(
-    (cardId: string) => {
+    async (cardId: string) => {
       if (cardId === "generate") {
-        setWritingTemplateId("work-plan");
-        setView("writing");
-        showToast("已进入写作助手，请填写主题并生成大纲");
+        setInputDraft({
+          text: "请根据以下主题生成文档内容：",
+          focus: true,
+          nonce: Date.now(),
+        });
+        showToast("请在输入框中补充写作主题");
         return;
       }
 
       if (cardId === "adjust") {
         if (selection.hasSelection) {
           const kind = detectSelectionContentKind(selection.text);
-          showToast(
-            kind === "code"
-              ? "已检测到代码选区，可使用顶部快捷按钮或 /优化、/注释、/删减 等指令"
-              : "已检测到文本选区，可使用顶部快捷按钮或 /润色、/校对 等指令"
-          );
-        } else {
-          showToast("请先在 Word 中选中文本，再使用润色、精简等操作");
+          const actionId: ActionType = kind === "code" ? "optimizeCode" : "polish";
+          if (settings.quickApplyEnabled) {
+            const error = await runDirectAction(actionId, selection.text);
+            if (error) showToast(error);
+            else showToast("已写入文档");
+          } else {
+            runAction(actionId, selection.text);
+          }
+          return;
         }
+
+        setInputDraft({ text: "/润色 ", focus: true, nonce: Date.now() });
+        showToast("请先在 Word 中选中文本，再使用润色、精简等操作");
         return;
       }
 
       if (cardId === "read") {
-        setWritingTemplateId("report");
-        setView("writing");
-        showToast("已进入写作助手，可使用「从 Word 文档续写」分析结构");
+        if (selection.hasSelection) {
+          if (settings.quickApplyEnabled) {
+            const error = await runDirectAction("summarize", selection.text);
+            if (error) showToast(error);
+            else showToast("已写入文档");
+          } else {
+            runAction("summarize", selection.text);
+          }
+          return;
+        }
+
+        setInputDraft({
+          text: "请快速总结这份文档的核心要点、结构与关键信息：",
+          focus: true,
+          nonce: Date.now(),
+        });
+        showToast("请先在 Word 中选中文本，或在输入框补充说明");
       }
     },
-    [selection.hasSelection, selection.text, showToast]
+    [
+      runAction,
+      runDirectAction,
+      selection.hasSelection,
+      selection.text,
+      settings.quickApplyEnabled,
+      showToast,
+    ]
   );
 
   const handleWritingProjectChange = useCallback(
@@ -435,6 +464,7 @@ export function App({ showBrowserPreviewHint = false }: AppProps) {
                 selectionText={selection.text}
                 selectionCharCount={selection.charCount}
                 disabled={loading}
+                draft={inputDraft}
                 onModelChange={handleModelChange}
                 onOutputStyleChange={handleOutputStyleChange}
                 onReorderBottomActions={handleReorderBottomActions}
